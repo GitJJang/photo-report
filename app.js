@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.2.4";
+const APP_VERSION = "1.3.0";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -365,26 +365,72 @@ $("#make").onclick = async () => {
   if (!tpl) { toast("양식을 아직 불러오지 못했어요. 잠시 뒤 다시 눌러 주세요."); return; }
   making = true; const btn = $("#make"); btn.disabled = true;
   try {
-    const zip = new JSZip(), names = new Set(), pn = new Set(), lines = [];
+    const zip = new JSZip(), names = new Set(), pn = new Set(), lines = [], parts = [];
     for (let i = 0; i < ready.length; i++) {
       const j = ready[i], xj = xjob(j); btn.textContent = `만드는 중… (${i + 1}/${ready.length})`;
       const name = uniqueIn(names, XlsmCore.reportName(xj));
-      zip.file(name, await XlsmCore.buildXlsm(tpl, tplInfo, xj, "before", "after", (k) => slotBytes(j, k)));
-      [...j.before, ...j.after].forEach((p, idx) => zip.file("사진/" + uniqueIn(pn, XlsmCore.photoName(xj, idx + 1, "jpg")), p.blob));
+      const xb = await XlsmCore.buildXlsm(tpl, tplInfo, xj, "before", "after", (k) => slotBytes(j, k));
+      zip.file(name, xb);
+      const part = { id: uid(), label: name.replace(/\.xlsm$/, ""), files: [{ name, kind: "xlsm", type: "application/vnd.ms-excel.sheet.macroEnabled.12", blob: new Blob([xb]) }] };
+      [...j.before, ...j.after].forEach((p, idx) => { const pnm = uniqueIn(pn, XlsmCore.photoName(xj, idx + 1, "jpg")); zip.file("사진/" + pnm, p.blob); part.files.push({ name: pnm, kind: "photo", type: "image/jpeg", blob: p.blob }); });
+      parts.push(part);
       lines.push([xj.place, xj.work, xj.status].filter(Boolean).join(" "));
     }
     btn.textContent = "압축하는 중…";
     const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
-    out = { blob, name: `사진대지_${ymd(new Date())}.zip`, ids: ready.map((j) => j.id), text: lines.join("\n") + "\n(사진대지 앱 등록)" };
+    out = { blob, name: `사진대지_${ymd(new Date())}.zip`, ids: ready.map((j) => j.id), parts, sent: false, text: lines.join("\n") + "\n(사진대지 앱 등록)" };
     $("#outInfo").textContent = `사진대지 ${ready.length}건 + 이름 바꾼 사진이 압축파일 하나에 들어 있어요. (${(blob.size / 1048576).toFixed(1)}MB)`;
     // 안드로이드 크롬은 zip·엑셀 파일 공유를 막는다(사진·pdf 등만 허용) → 압축파일은 저장 후 카톡에서 첨부
     out.photos = ready.flatMap((j) => { const xj = xjob(j), pn2 = new Set(); return [...j.before, ...j.after].map((p, idx) => new File([p.blob], uniqueIn(pn2, XlsmCore.photoName(xj, idx + 1, "jpg")), { type: "image/jpeg" })); });
     $("#outFile").textContent = `'${out.name}'`;
     $("#outShare").hidden = !(navigator.canShare && out.photos.length && navigator.canShare({ files: out.photos }));
+    $("#outUp").disabled = false; $("#outUp").textContent = "① 사무실로 올리기";
     $("#outBack").hidden = false;
   } catch (e) { toast("만들지 못했어요: " + (e.message || e)); }
   finally { making = false; btn.disabled = false; renderJobs(); }
 };
+/* ---------- 사무실로 올리기: 구글 드라이브 '사진대지 수신' 폴더 ---------- */
+const UPLOAD_URL = "https://script.google.com/macros/s/AKfycbwk9cwL7_61WV_MBk3ya_Q0VrQRHxEAGdJbUTWTdqFi_mfEJKvQvfmAYjiRDDRwaGZH1Q/exec";
+const UPLOAD_KEY = "cD9yxhleOZCoFzlI";
+const b64 = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
+async function sendPart(part) {
+  const files = [];
+  for (const f of part.files) files.push({ name: f.name, kind: f.kind, type: f.type, b64: await b64(f.blob) });
+  const r = await fetch(UPLOAD_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ key: UPLOAD_KEY, files }) });
+  const j = await r.json().catch(() => null);
+  if (!j || !j.ok) throw new Error((j && j.error) || "서버 응답 " + r.status);
+}
+let flushing = false;
+/* 보낼 목록(outbox)을 차례로 올린다. 인터넷이 끊기면 남겨 두고 다음에 다시 */
+async function flushOutbox(show) {
+  if (flushing) return; flushing = true;
+  let ok = 0, left = 0, err = "";
+  try {
+    let box = (await idbGet("outbox").catch(() => null)) || [];
+    while (box.length) {
+      try { await sendPart(box[0]); ok++; box = box.slice(1); await idbSet("outbox", box); if (show) show(ok, box.length); }
+      catch (e) { err = e.message || String(e); break; }
+    }
+    left = box.length;
+  } finally { flushing = false; }
+  return { ok, left, err };
+}
+$("#outUp").onclick = async () => {
+  if (!out || out.sent) return; const b = $("#outUp"); b.disabled = true;
+  try {
+    const box = (await idbGet("outbox").catch(() => null)) || [];
+    await idbSet("outbox", box.concat(out.parts)); out.sent = true;
+    b.textContent = "올리는 중…";
+    const r = await flushOutbox((n, l) => (b.textContent = `올리는 중… (${l}건 남음)`));
+    if (!r.left) { b.textContent = "✓ 사무실로 올렸어요"; toast(`사진대지 ${r.ok}건을 사무실로 올렸어요.`, 4000); }
+    else { b.textContent = `${r.left}건 대기 중 — 인터넷 되면 자동으로 올라가요`; toast(`아직 못 올린 ${r.left}건은 폰에 보관했다가 인터넷이 되면 자동으로 올려요.\n(${r.err})`, 7000); }
+  } catch (e) { b.disabled = false; toast("올리지 못했어요: " + (e.message || e), 6000); }
+};
+async function autoFlush() {
+  const box = (await idbGet("outbox").catch(() => null)) || []; if (!box.length || !navigator.onLine) return;
+  const r = await flushOutbox(); if (r && r.ok) toast(`대기 중이던 사진대지 ${r.ok}건을 사무실로 올렸어요.${r.left ? ` (${r.left}건 남음)` : ""}`, 5000);
+}
+window.addEventListener("online", autoFlush);
 $("#outShare").onclick = () => {
   if (!out || !out.photos) return;
   navigator.share({ files: out.photos }).catch((e) => { if (e.name !== "AbortError") toast("보내지 못했어요 (" + e.name + ": " + e.message + ")", 6000); });
@@ -499,5 +545,6 @@ async function init() {
     navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((r) => r.update()).catch(() => {});
   }
   $("#foot").textContent = `버전 ${APP_VERSION}`;
+  autoFlush();
 }
 init();
