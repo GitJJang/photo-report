@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.0.1";
+const APP_VERSION = "1.1.0";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -9,7 +9,7 @@ const DEFAULT_RATIO = 5293179 / 3743624;
 
 const DATA = {
   lines: [{ name: "1호선", vendor: "", stations: [] }, { name: "2호선", vendor: "", stations: [] }],
-  parts: ["롤러", "기판"], positions: [""],
+  parts: [], positions: [""],
 };
 const S = { jobs: [], tray: [], seq: 0, sel: null };
 let tpl = null, tplInfo = null, out = null, deferredInstall = null;
@@ -28,7 +28,7 @@ function toast(msg, ms = 3200) { const t = $("#toast"); t.textContent = msg; t.h
 const lineOf = (j) => DATA.lines.find((l) => l.name === j.line) || DATA.lines[0];
 const stationOf = (j) => (j.station === "__custom" ? (j.stationCustom || "").trim() : j.station || "");
 const placeOf = (j) => [stationOf(j), j.unit ? (j.kind || "") + j.unit : ""].filter(Boolean).join(" ");
-const partOf = (j) => (j.part === "__custom" ? (j.partCustom || "").trim() : j.part || "");
+const partOf = (j) => (j.part || "").trim();
 function workOf(j) {
   const bits = [j.pos, partOf(j), partOf(j) && j.count ? j.count + "개" : ""].filter(Boolean);
   return bits.length ? bits.join(" ") + " 교체" : "";
@@ -151,12 +151,11 @@ function newJob(from) {
   const lineName = (last && last.line) || localStorage.getItem("sdj-line") || "1호선";
   return {
     id: uid(), date: (last && last.date) || ymd(new Date()), line: lineName, station: (last && last.station) || "", stationCustom: (last && last.stationCustom) || "",
-    kind: (last && last.kind) || "ES", unit: "", pos: "", part: "", partCustom: "", count: 1, status: "", layout: "v", before: [], after: [],
+    kind: (last && last.kind) || "ES", unit: "", pos: "", part: "", partSpec: "", count: 1, status: "", layout: "v", before: [], after: [],
   };
 }
 const unitOptions = (sel) => `<option value="">호기</option>` + Array.from({ length: 40 }, (_, i) => `<option${String(i + 1) === String(sel) ? " selected" : ""}>${i + 1}</option>`).join("");
 const stationOptions = (j) => `<option value="">역 선택</option>` + lineOf(j).stations.map((s) => `<option${s === j.station ? " selected" : ""}>${esc(s)}</option>`).join("") + `<option value="__custom"${j.station === "__custom" ? " selected" : ""}>기타(직접 입력)</option>`;
-const partOptions = (j) => `<option value="">부품 선택</option>` + DATA.parts.map((s) => `<option${s === j.part ? " selected" : ""}>${esc(s)}</option>`).join("") + `<option value="__custom"${j.part === "__custom" ? " selected" : ""}>기타(직접 입력)</option>`;
 const posOptions = (j) => DATA.positions.map((s) => `<option value="${esc(s)}"${s === j.pos ? " selected" : ""}>${s ? esc(s) : "위치 없음"}</option>`).join("");
 
 function slotHtml(j, key, label) {
@@ -187,8 +186,9 @@ function jobHtml(j, i) {
     <div class="grid2"><div class="seg">${["EL", "ES"].map((k) => `<button data-act="kind" data-v="${k}" class="${k === j.kind ? "on" : ""}">${k}</button>`).join("")}</div>
     <select data-f="unit" aria-label="호기 번호">${unitOptions(j.unit)}</select></div>
     <label class="f">작업</label>
-    <div class="grid2"><select data-f="pos" aria-label="위치">${posOptions(j)}</select><select data-f="part" aria-label="부품">${partOptions(j)}</select></div>
-    <input type="text" data-f="partCustom" placeholder="부품 이름" value="${esc(j.partCustom)}" style="margin-top:8px" ${j.part === "__custom" ? "" : "hidden"}>
+    <select data-f="pos" aria-label="위치">${posOptions(j)}</select>
+    <div class="row" style="margin-top:8px"><input type="text" data-f="part" placeholder="부품명 (예: 가압롤러)" value="${esc(j.part)}" autocomplete="off" style="flex:1;min-width:0"><button class="btn" data-act="findpart" style="flex:none">🔍 부품 찾기</button></div>
+    ${j.partSpec ? `<button class="chip" data-act="addspec">규격 붙이기 ＋ (${esc(j.partSpec)})</button>` : ""}
     <div class="grid2" style="margin-top:8px">
       <div class="stepper"><button data-act="cminus" aria-label="개수 줄이기">－</button><span>${j.count}개</span><button data-act="cplus" aria-label="개수 늘리기">＋</button></div>
       <select data-f="status" aria-label="상태"><option value="">교체</option><option${j.status === "수선구매" ? " selected" : ""}>수선구매</option><option${j.status === "중보수" ? " selected" : ""}>중보수</option></select>
@@ -256,13 +256,13 @@ jobsEl.addEventListener("change", async (e) => {
   const f = t.dataset.f; if (!f) return;
   if (f === "date") j.date = t.value.replace(/-/g, "");
   else j[f] = t.value;
-  if (f === "station" || f === "part") { $(`[data-f="${f}Custom"]`, card).hidden = t.value !== "__custom"; }
+  if (f === "station") { $(`[data-f="stationCustom"]`, card).hidden = t.value !== "__custom"; }
   updateCard(card, j); saveSoon();
   $("#cnt").textContent = `${S.jobs.length}건`;
 });
 jobsEl.addEventListener("input", (e) => {
   const { card, j } = jobOfEl(e); if (!j) return;
-  const f = e.target.dataset.f; if (f === "stationCustom" || f === "partCustom") { j[f] = e.target.value; updateCard(card, j); saveSoon(); }
+  const f = e.target.dataset.f; if (f === "stationCustom" || f === "part") { j[f] = e.target.value; if (f === "part") j.partSpec = ""; updateCard(card, j); saveSoon(); }
 });
 jobsEl.addEventListener("click", (e) => {
   const { card, j } = jobOfEl(e); if (!j) return;
@@ -276,7 +276,9 @@ jobsEl.addEventListener("click", (e) => {
   else if (act === "cplus") { j.count = Math.min(99, j.count + 1); updateCard(card, j); saveSoon(); }
   else if (act === "cminus") { j.count = Math.max(1, j.count - 1); updateCard(card, j); saveSoon(); }
   else if (act === "del") { if (j.before.length + j.after.length && !b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "정말 삭제?"; setTimeout(() => { b.dataset.sure = ""; b.textContent = "삭제"; }, 3500); return; } S.jobs = S.jobs.filter((x) => x !== j); renderJobs(); }
-  else if (act === "dup") { const c = newJob(j); Object.assign(c, { unit: j.unit, pos: j.pos, part: j.part, partCustom: j.partCustom, count: j.count, status: j.status, layout: j.layout }); S.jobs.splice(S.jobs.indexOf(j) + 1, 0, c); renderJobs(); toast("복제했어요. 호기와 사진만 바꾸세요."); }
+  else if (act === "dup") { const c = newJob(j); Object.assign(c, { unit: j.unit, pos: j.pos, part: j.part, count: j.count, status: j.status, layout: j.layout }); S.jobs.splice(S.jobs.indexOf(j) + 1, 0, c); renderJobs(); toast("복제했어요. 호기와 사진만 바꾸세요."); }
+  else if (act === "findpart") openParts(j);
+  else if (act === "addspec") { if (j.partSpec) { j.part = (partOf(j) + " (" + j.partSpec + ")").trim(); j.partSpec = ""; const y = scrollY; renderJobs(); scrollTo(0, y); } }
   else if (act === "clearslot") { j[key] = []; renderJobs(); }
   else if (act === "adjust") openAdjust(j, key);
   else if (act === "tile") {
@@ -414,10 +416,67 @@ async function intakeShared() {
   } catch (e) {}
 }
 
+
+/* ---------- 부품 찾기: 자재 목록에서 초성·글자로 검색 ---------- */
+let PARTS = [];
+const CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+const choOf = (c) => { const k = c.charCodeAt(0) - 0xac00; return k >= 0 && k < 11172 ? CHO[Math.floor(k / 588)] : c; };
+const isCho = (c) => c >= "ㄱ" && c <= "ㅎ";
+/* 검색어(q)가 text 안에 들어 있나 — 검색어의 자음은 그 자음으로 시작하는 글자와 맞춘다 */
+function hasText(text, q) {
+  for (let i = 0; i + q.length <= text.length; i++) {
+    let ok = true;
+    for (let j = 0; j < q.length; j++) { const a = q[j], b = text[i + j]; if (a === b || (isCho(a) && choOf(b) === a)) continue; ok = false; break; }
+    if (ok) return true;
+  }
+  return false;
+}
+function searchParts(raw) {
+  const q = raw.toLowerCase().replace(/\s/g, ""); if (!q) return [];
+  const hits = [];
+  for (const p of PARTS) {
+    let score = 0;
+    if (p.nk.toLowerCase().startsWith(q) || (isCho(q[0]) && hasText(p.nk.slice(0, q.length), q))) score = 3;
+    else if (hasText(p.nk.toLowerCase(), q)) score = 2;
+    else if (hasText(p.k, q)) score = 1;
+    if (score) hits.push([score, p]);
+  }
+  hits.sort((a, b) => b[0] - a[0] || a[1].n.localeCompare(b[1].n, "ko") || a[1].sp.localeCompare(b[1].sp, "ko"));
+  return hits.map((h) => h[1]);
+}
+const recents = () => { try { return JSON.parse(localStorage.getItem("sdj-recent") || "[]"); } catch (e) { return []; } };
+let partJob = null;
+function openParts(j) {
+  partJob = j; $("#partQ").value = ""; renderParts(); $("#partBack").hidden = false;
+  setTimeout(() => $("#partQ").focus(), 50);
+}
+function renderParts() {
+  const q = $("#partQ").value.trim(), box = $("#partList");
+  let list, head = "";
+  if (!PARTS.length) { box.innerHTML = `<div class="note" style="padding:10px">자재 목록을 불러오지 못했어요. 아래에 직접 쓰고 사용 버튼을 누르세요.</div>`; list = []; }
+  else if (q) { list = searchParts(q); head = list.length ? `<div class="note" style="padding:4px 2px">${list.length > 60 ? "60개만 보여요. 더 입력해 좁혀 보세요." : list.length + "개"}</div>` : `<div class="note" style="padding:10px">맞는 부품이 없어요. 아래 '이 글자로 쓰기'를 누르세요.</div>`; list = list.slice(0, 60); }
+  else { list = recents().map(([n, sp]) => PARTS.find((p) => p.n === n && p.sp === sp)).filter(Boolean); head = `<div class="note" style="padding:4px 2px">${list.length ? "최근 쓴 부품" : "부품 이름이나 초성을 입력하세요. 예) ㄱㅇㄷㄹㄹ → 가이드롤러"}</div>`; }
+  box.innerHTML = head + list.map((p) => `<button class="pitem" data-n="${esc(p.n)}" data-sp="${esc(p.sp)}"><b>${esc(p.n)}</b><small>${esc(p.sp)}${p.o !== p.n ? " · 자재명 " + esc(p.o) : ""}</small></button>`).join("");
+  $("#partUse").hidden = !q; $("#partUse").textContent = `'${q}' 이 글자로 쓰기`;
+}
+$("#partQ").addEventListener("input", renderParts);
+$("#partList").addEventListener("click", (e) => {
+  const b = e.target.closest(".pitem"); if (!b || !partJob) return;
+  const n = b.dataset.n, sp = b.dataset.sp;
+  const r = recents().filter(([a, c]) => !(a === n && c === sp)); r.unshift([n, sp]);
+  try { localStorage.setItem("sdj-recent", JSON.stringify(r.slice(0, 10))); } catch (e2) {}
+  partJob.part = n; partJob.partSpec = sp; closeParts();
+});
+$("#partUse").onclick = () => { if (!partJob) return; partJob.part = $("#partQ").value.trim(); partJob.partSpec = ""; closeParts(); };
+function closeParts() { $("#partBack").hidden = true; partJob = null; const y = scrollY; renderJobs(); scrollTo(0, y); }
+$("#partClose").onclick = () => { $("#partBack").hidden = true; partJob = null; };
+$("#partBack").addEventListener("click", (e) => { if (e.target.id === "partBack") $("#partClose").click(); });
+
 /* ---------- 시작 ---------- */
 async function init() {
   try { const r = await fetch("data/stations.json"); if (r.ok) Object.assign(DATA, await r.json()); } catch (e) {}
-  try { const st = await idbGet("state"); if (st) { S.jobs = (st.jobs || []).map((j) => ({ layout: "v", ...j })); S.tray = st.tray || []; S.seq = st.seq || 0; } } catch (e) {}
+  try { const r = await fetch("data/parts.json"); if (r.ok) { const d = await r.json(); PARTS = d.items.map(([n, sp, o]) => ({ n, sp, o, k: (n + sp + o).toLowerCase().replace(/\s/g, ""), nk: n.replace(/\s/g, "") })); } } catch (e) {}
+  try { const st = await idbGet("state"); if (st) { S.jobs = (st.jobs || []).map((j) => { const k = { layout: "v", partSpec: "", ...j }; if (k.part === "__custom") k.part = k.partCustom || ""; return k; }); S.tray = st.tray || []; S.seq = st.seq || 0; } } catch (e) {}
   renderJobs();
   try {
     const r = await fetch("template.xlsm"); tpl = await r.arrayBuffer(); tplInfo = await XlsmCore.inspectTemplate(tpl);

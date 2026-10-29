@@ -76,6 +76,11 @@ input[type=text],input[type=date],select{width:100%;height:46px;font:inherit;fon
 .adj canvas{width:100%;height:100%;display:block;touch-action:none;cursor:grab}
 .pg{position:absolute;left:0;top:0;margin:6px;display:flex;gap:3px;align-items:center;background:rgba(0,0,0,.65);border-radius:8px;padding:3px;z-index:2}
 .pg button{background:rgba(255,255,255,.2);color:#fff;border:0;border-radius:6px;font:700 14px var(--font);min-width:34px;height:32px;cursor:pointer;padding:0 8px}
+.chip{margin-top:8px;border:1px dashed var(--accent);background:var(--accent-soft);color:var(--ink);border-radius:999px;padding:8px 12px;font:600 13px var(--font);cursor:pointer;text-align:left;max-width:100%}
+.pitem{display:block;width:100%;text-align:left;background:var(--card);border:0;border-bottom:1px solid var(--line);padding:10px 4px;min-height:52px;font:inherit;color:var(--ink);cursor:pointer}
+.pitem b{display:block;font-size:16px}
+.pitem small{display:block;color:var(--muted);font-size:12px;word-break:break-all}
+#partList{max-height:52vh;overflow:auto;margin:8px 0}
 .toast{position:fixed;left:50%;bottom:calc(100px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:60;max-width:90%;text-align:center;white-space:pre-line}
 .toast[hidden]{display:none}
 .note{font-size:12px;color:var(--muted)}
@@ -126,6 +131,16 @@ input[type=text],input[type=date],select{width:100%;height:46px;font:inherit;fon
     <button class="btn danger" id="mAll">작업 전부 지우기</button>
     <p class="note" id="mInfo"></p>
     <button class="btn" id="menuClose">닫기</button>
+  </div>
+</div>
+
+<div class="sheet-back" id="partBack" hidden>
+  <div class="sheet">
+    <h3>부품 찾기</h3>
+    <input type="text" id="partQ" placeholder="초성이나 글자 (예: ㄱㅇㄷㄹㄹ, 롤러)" autocomplete="off" enterkeyhint="search">
+    <div id="partList"></div>
+    <button class="btn primary" id="partUse" hidden></button>
+    <button class="btn" id="partClose">닫기</button>
   </div>
 </div>
 
