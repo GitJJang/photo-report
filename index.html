@@ -117,8 +117,9 @@ input[type=text],input[type=date],select{width:100%;height:46px;font:inherit;fon
   <div class="sheet">
     <h3 id="outTitle">사진대지를 만들었어요</h3>
     <p class="note" id="outInfo"></p>
-    <button class="btn primary" id="outShare">카톡·다른 앱으로 보내기</button>
-    <button class="btn" id="outSave">폰에 저장</button>
+    <button class="btn primary" id="outSave">① 폰에 저장</button>
+    <div class="preview" id="outGuide"><b>② 카톡으로 보내기</b>카톡 대화방 → <b>＋</b> → <b>파일</b> → <b>다운로드</b> 폴더에서 <span id="outFile"></span> 선택</div>
+    <button class="btn" id="outShare" hidden>사진만 다른 앱으로 보내기</button>
     <button class="btn" id="outCopy">카톡용 문구 복사</button>
     <button class="btn danger" id="outClear">보낸 건 사진 비우기</button>
     <button class="btn" id="outClose">닫기</button>
