@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.0.1";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -184,7 +184,7 @@ function jobHtml(j, i) {
     <select data-f="station">${stationOptions(j)}</select>
     <input type="text" data-f="stationCustom" placeholder="역 이름" value="${esc(j.stationCustom)}" style="margin-top:8px" ${j.station === "__custom" ? "" : "hidden"}>
     <label class="f">호기</label>
-    <div class="grid2"><div class="seg">${["EL", "ES"].map((k) => `<button data-act="kind" data-v="${k}" class="${k === j.kind ? "on" : ""}">${k === "EL" ? "EL 승강기" : "ES 에스컬"}</button>`).join("")}</div>
+    <div class="grid2"><div class="seg">${["EL", "ES"].map((k) => `<button data-act="kind" data-v="${k}" class="${k === j.kind ? "on" : ""}">${k}</button>`).join("")}</div>
     <select data-f="unit" aria-label="호기 번호">${unitOptions(j.unit)}</select></div>
     <label class="f">작업</label>
     <div class="grid2"><select data-f="pos" aria-label="위치">${posOptions(j)}</select><select data-f="part" aria-label="부품">${partOptions(j)}</select></div>
