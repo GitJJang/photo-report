@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.2.1";
+const APP_VERSION = "1.2.2";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -409,6 +409,7 @@ $("#outClose").onclick = () => ($("#outBack").hidden = true);
 
 /* ---------- 메뉴 ---------- */
 $("#menuBtn").onclick = () => { $("#mInfo").textContent = `버전 ${APP_VERSION} · 사진은 이 폰 안에만 있고 어디에도 올라가지 않아요.`; $("#mInstall").hidden = !deferredInstall; $("#menuBack").hidden = false; };
+$("#mUpdate").onclick = async () => { try { (await navigator.serviceWorker.getRegistrations()).forEach((r) => r.unregister()); (await caches.keys()).filter((k) => k.startsWith("sdj-v")).forEach((k) => caches.delete(k)); } catch (e) {} location.reload(); };
 $("#menuClose").onclick = () => ($("#menuBack").hidden = true);
 function twoTap(btn, label, fn) { btn.onclick = () => { if (!btn.dataset.sure) { btn.dataset.sure = "1"; btn.textContent = "정말요? 한 번 더 누르세요"; setTimeout(() => { btn.dataset.sure = ""; btn.textContent = label; }, 3500); return; } btn.dataset.sure = ""; btn.textContent = label; fn(); $("#menuBack").hidden = true; }; }
 twoTap($("#mPhotos"), "모든 작업의 사진 비우기", () => { S.jobs.forEach((j) => { j.before = []; j.after = []; }); S.tray = []; S.sel = null; renderJobs(); });
@@ -497,7 +498,11 @@ async function init() {
     renderJobs();
   } catch (e) { toast("양식을 불러오지 못했어요. 인터넷에 한 번 연결한 뒤 다시 열어 주세요.", 6000); }
   if (location.search.includes("shared")) { await intakeShared(); history.replaceState(null, "", location.pathname); }
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  if ("serviceWorker" in navigator) {
+    const had = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener("controllerchange", () => { if (had && !window.__rl && !making && !S.jobs.some((j) => false)) { window.__rl = 1; toast("새 버전으로 바꾸는 중…", 1500); setTimeout(() => location.reload(), 800); } });
+    navigator.serviceWorker.register("sw.js").then((r) => r.update()).catch(() => {});
+  }
   $("#foot").textContent = `버전 ${APP_VERSION}`;
 }
 init();
