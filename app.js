@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.2.0";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -219,6 +219,13 @@ async function paintCards() {
   }
 }
 let trayUrls = [];
+$("#bulkPick").addEventListener("change", async (e) => {
+  const files = [...e.target.files]; e.target.value = ""; if (!files.length) return;
+  toast(`사진 ${files.length}장 불러오는 중…`, 8000);
+  const ph = await importMany(files); S.tray.push(...ph); $("#toast").hidden = true;
+  if (ph.length) toast(`사진 ${ph.length}장이 위에 담겼어요. 사진을 누르고 교체 전/후 칸을 누르세요.`, 5000);
+  renderJobs();
+});
 function renderTray() {
   trayUrls.forEach((u) => URL.revokeObjectURL(u)); trayUrls = [];
   const t = $("#tray"); t.hidden = !S.tray.length; if (!S.tray.length) return;
@@ -377,8 +384,15 @@ $("#make").onclick = async () => {
 };
 $("#outShare").onclick = async () => {
   if (!out) return;
-  try { await navigator.share({ files: [new File([out.blob], out.name, { type: "application/zip" })], title: out.name }); }
-  catch (e) { if (e.name !== "AbortError") toast("보내지 못했어요. '폰에 저장'을 눌러 주세요."); }
+  const variants = [["application/zip", out.name], ["application/octet-stream", out.name], ["application/octet-stream", out.name.replace(/\.zip$/, ".zip.bin")]];
+  let last = null;
+  for (const [type, nm] of variants) {
+    const f = new File([out.blob], nm, { type });
+    if (navigator.canShare && !navigator.canShare({ files: [f] })) { last = new Error("canShare false (" + type + ")"); continue; }
+    try { await navigator.share({ files: [f] }); return; }
+    catch (e) { if (e.name === "AbortError") return; last = e; }
+  }
+  toast("보내지 못했어요 (" + ((last && (last.name + ": " + last.message)) || "알 수 없음") + ")\n'폰에 저장'을 누른 뒤 카톡에서 파일로 보내세요.", 7000);
 };
 $("#outSave").onclick = () => {
   if (!out) return; const a = document.createElement("a"); a.href = URL.createObjectURL(out.blob); a.download = out.name; document.body.appendChild(a); a.click();

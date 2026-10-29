@@ -57,6 +57,7 @@ input[type=text],input[type=date],select{width:100%;height:46px;font:inherit;fon
 .btn.danger{color:var(--bad)}
 .btn input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:0;cursor:pointer}
 .btn[disabled]{opacity:.45}
+.btn.bulk{width:100%;margin:0 0 12px;height:48px;border-color:var(--accent)}
 .link{background:none;border:0;color:var(--muted);text-decoration:underline;font:inherit;font-size:13px;cursor:pointer;padding:6px}
 .warn{margin-top:8px;font-size:12px;color:var(--bad)}
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--card);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom));display:flex;gap:10px;justify-content:center}
@@ -93,6 +94,7 @@ input[type=text],input[type=date],select{width:100%;height:46px;font:inherit;fon
   <button class="iconbtn" id="menuBtn" aria-label="메뉴">⋯</button>
 </header>
 <main>
+  <label class="btn bulk">📥 사진 한꺼번에 담기 (여러 장 선택)<input type="file" accept="image/*" multiple id="bulkPick" aria-label="사진 여러 장 담기"></label>
   <div id="tray" hidden></div>
   <div id="jobs"></div>
   <p class="note" id="foot"></p>

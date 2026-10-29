@@ -1,5 +1,5 @@
 /* 오프라인 동작 + 공유 메뉴로 사진 받기 */
-const VERSION = "sdj-v1.1.0";
+const VERSION = "sdj-v1.2.0";
 const SHELL = ["./", "index.html", "app.js", "xlsm-core.js", "vendor/jszip.min.js", "template.xlsm", "data/stations.json", "data/parts.json", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
