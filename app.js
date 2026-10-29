@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.2.2";
+const APP_VERSION = "1.2.3";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -500,8 +500,8 @@ async function init() {
   if (location.search.includes("shared")) { await intakeShared(); history.replaceState(null, "", location.pathname); }
   if ("serviceWorker" in navigator) {
     const had = !!navigator.serviceWorker.controller;
-    navigator.serviceWorker.addEventListener("controllerchange", () => { if (had && !window.__rl && !making && !S.jobs.some((j) => false)) { window.__rl = 1; toast("새 버전으로 바꾸는 중…", 1500); setTimeout(() => location.reload(), 800); } });
-    navigator.serviceWorker.register("sw.js").then((r) => r.update()).catch(() => {});
+    navigator.serviceWorker.addEventListener("controllerchange", () => { if (had && !window.__rl && !making) { window.__rl = 1; toast("새 버전으로 바꾸는 중…", 1500); setTimeout(() => location.reload(), 800); } });
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((r) => r.update()).catch(() => {});
   }
   $("#foot").textContent = `버전 ${APP_VERSION}`;
 }
