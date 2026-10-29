@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.2.1";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -382,17 +382,17 @@ $("#make").onclick = async () => {
   } catch (e) { toast("만들지 못했어요: " + (e.message || e)); }
   finally { making = false; btn.disabled = false; renderJobs(); }
 };
-$("#outShare").onclick = async () => {
+let shareTry = 0;
+$("#outShare").onclick = () => {
   if (!out) return;
-  const variants = [["application/zip", out.name], ["application/octet-stream", out.name], ["application/octet-stream", out.name.replace(/\.zip$/, ".zip.bin")]];
-  let last = null;
-  for (const [type, nm] of variants) {
-    const f = new File([out.blob], nm, { type });
-    if (navigator.canShare && !navigator.canShare({ files: [f] })) { last = new Error("canShare false (" + type + ")"); continue; }
-    try { await navigator.share({ files: [f] }); return; }
-    catch (e) { if (e.name === "AbortError") return; last = e; }
-  }
-  toast("보내지 못했어요 (" + ((last && (last.name + ": " + last.message)) || "알 수 없음") + ")\n'폰에 저장'을 누른 뒤 카톡에서 파일로 보내세요.", 7000);
+  const V = [["application/zip", out.name], ["application/octet-stream", out.name], ["application/octet-stream", out.name.replace(/\.zip$/, ".bin")]];
+  const [type, nm] = V[shareTry % V.length], f = new File([out.blob], nm, { type });
+  // 눌린 즉시 호출해야 폰이 허용한다(그 앞에 await 금지)
+  navigator.share({ files: [f] }).then(() => { shareTry = 0; }, (e) => {
+    if (e.name === "AbortError") return;
+    shareTry++;
+    toast(`보내지 못했어요 [방식 ${shareTry}/${V.length}]\n${e.name}: ${e.message}\n다시 누르면 다른 방식으로 시도해요. 계속 안 되면 '폰에 저장'.`, 9000);
+  });
 };
 $("#outSave").onclick = () => {
   if (!out) return; const a = document.createElement("a"); a.href = URL.createObjectURL(out.blob); a.download = out.name; document.body.appendChild(a); a.click();
