@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.6.1";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -635,8 +635,15 @@ async function getContacts() {
   if (st && st.data) return { data: st.data, demo: false };
   const d = await loadData("sample").catch(() => ({})); return { data: (d.work && d.work.vendor) || {}, demo: true };
 }
-async function getDuty() { try { const s = await idbGet("duty"); if (s && s.date === ymd(new Date())) return s.names || []; } catch (e) {} return []; }
-async function toggleDuty(key) { const cur = new Set(await getDuty()); cur.has(key) ? cur.delete(key) : cur.add(key); await idbSet("duty", { date: ymd(new Date()), names: [...cur] }); }
+const todayKey = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
+async function getRosterAll() { try { const s = await idbGet("roster"); return (s && s.map) || {}; } catch (e) { return {}; } }
+async function getDuty() { const m = await getRosterAll(), e = m[todayKey()] || {}; return { duty: e.duty || [], off: e.off || [], has: !!m[todayKey()] }; }
+async function toggleDuty(key) {
+  const m = await getRosterAll(), k = todayKey(), e = m[k] || { duty: [], off: [] };
+  const duty = new Set(e.duty), off = new Set(e.off);
+  if (duty.has(key)) duty.delete(key); else { duty.add(key); off.delete(key); }
+  m[k] = { duty: [...duty], off: [...off] }; await idbSet("roster", { map: m, ts: Date.now() });
+}
 const telNorm = (t) => { const d = String(t).replace(/\D/g, ""); return d.length === 11 ? d.replace(/(\d{3})(\d{4})(\d{4})/, "$1-$2-$3") : d.length === 10 ? d.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3") : String(t); };
 function parseContacts(grids) {
   const res = {}, blocks = [];
@@ -698,12 +705,13 @@ async function renderHome() {
   const cls = { "통상": "l0", "1호선": "l1", "2호선": "l2" };
   const dutyCell = (k, p, on) => `<button class="pc dpick${on ? " on" : ""}" data-k="${k}|${esc(p.name)}"><span>${esc(p.name)}${p.role ? `<small class="rk">${esc(p.role)}</small>` : ""}</span><em>${on ? "당직 ✓" : "당직"}</em></button>`;
   const venCol = (k) => {
-    const v = ct.data[k] || {}, ppl = v.people || [], set = new Set(duty), isOn = (p) => set.has(k + "|" + p.name);
-    const dayP = ppl.filter((p) => !isOn(p)), dutyP = ppl.filter(isOn);
+    const v = ct.data[k] || {}, ppl = v.people || [], dset = new Set(duty.duty), oset = new Set(duty.off);
+    const isD = (p) => dset.has(k + "|" + p.name), isO = (p) => oset.has(k + "|" + p.name) && !isD(p);
+    const dayP = ppl.filter((p) => !isD(p) && !isO(p)), dutyP = ppl.filter(isD), offP = ppl.filter(isO);
     const nums = `<div class="nums">${v.in ? `<span>사내 ${esc(v.in)}</span>` : ""}${v.gen ? `<a href="${esc(telHref(v.gen))}">일반 ${esc(v.gen)}</a>` : ""}</div>`;
     const inner = dutyMode === k
-      ? `<div class="sub duty">눌러서 오늘 당직 지정</div>${ppl.map((p) => dutyCell(k, p, isOn(p))).join("")}`
-      : `<div class="sub">주간 ${dayP.length}명</div>${body(dayP)}<div class="sub duty">당직 ${dutyP.length}명</div>${body(dutyP)}`;
+      ? `<div class="sub duty">눌러서 오늘 당직 지정</div>${ppl.map((p) => dutyCell(k, p, isD(p))).join("")}`
+      : `<div class="sub">주간 ${dayP.length}명</div>${body(dayP)}<div class="sub duty">당직 ${dutyP.length}명</div>${body(dutyP)}` + (offP.length ? `<div class="sub off">휴무 ${offP.length}명</div><div class="offlist">${offP.map(cell).join("")}</div>` : "");
     return `<div class="col ${cls[k]}"><div class="ch">${k} · ${esc(v.co || "")}</div>${nums}<div class="cb">${inner}</div><button class="link dmode" data-m="${k}">${dutyMode === k ? "지정 끝내기" : "오늘 당직 지정"}</button></div>`;
   };
   const w = d.work || {}, st = w.staff || {};
@@ -711,10 +719,65 @@ async function renderHome() {
     '<div class="grp"><h3>승강관리소 직원</h3><div class="cols c3">' +
     ["통상", "1호선", "2호선"].map((k) => `<div class="col ${cls[k]}"><div class="ch">${k === "통상" ? "통상" : k + " 담당"}</div><div class="cb">${body(st[k])}</div></div>`).join("") +
     `</div></div><div class="grp"><h3>승강업체 비상연락망${ct.demo ? "" : ""}</h3><div class="cols c2">` + ["1호선", "2호선"].map(venCol).join("") +
-    `</div><div class="planbar" style="margin-top:8px"><label class="btn">비상연락망 불러오기(엑셀)<input type="file" accept=".xlsx,.xlsm,.json,application/json" id="ctFile"></label>${ct.demo ? "" : '<button class="link" id="ctClear">지우기</button>'}</div></div>`;
+    `</div><div class="planbar" style="margin-top:8px"><label class="btn">비상연락망 불러오기(엑셀)<input type="file" accept=".xlsx,.xlsm,.json,application/json" id="ctFile"></label>${ct.demo ? "" : '<button class="link" id="ctClear">지우기</button>'}</div>${ct.demo ? "" : `<div class="planbar"><label class="btn">업체 근무표 불러오기(엑셀)<input type="file" accept=".xlsx,.xlsm" id="rsFile"></label>${duty.has ? '<small class="note">오늘 근무 반영됨</small>' : '<small class="note">오늘 근무표 없음</small>'}</div>`}</div>`;
   $("#hPlan").innerHTML = `<div class="sec"><h2>오늘 작업 · ${dLabel(new Date())}</h2></div>` + (todays.map(itemHtml).join("") || '<div class="empty">오늘 작업이 없어요</div>');
   $("#hAcc").innerHTML = '<div class="sec"><h2>최근 사고</h2></div>' + (d.acc || []).slice(0, 3).map(accHtml).join("");
 }
+
+/* 업체 근무표(엑셀) → 날짜별 당직·휴무. 이름 칸이면 '당/휴' 같은 표시를, 주간/당직 칸이면 적힌 이름을 읽음 */
+function parseRoster(grids, fname, contacts) {
+  const people = []; Object.entries(contacts).forEach(([ln, v]) => (v.people || []).forEach((p) => people.push({ key: ln + "|" + p.name, name: p.name })));
+  const clean = (t) => String(t).replace(/\([^)]*\)/g, "").replace(/[\d\s]/g, "");
+  const exact = (t) => { const c = clean(t); return c ? people.find((p) => p.name === c) : null; };
+  const loose = (t) => { const c = clean(t); return c ? people.find((p) => p.name === c) || people.find((p) => c.includes(p.name)) : null; };
+  const cls = (v) => { const x = String(v).replace(/\s/g, ""); if (!x) return "day"; if (/당|야간|숙직/.test(x)) return "duty"; if (/^(휴|연|비|대휴|OFF|off|결|병|공가|[-–—])/i.test(x)) return "off"; return "day"; };
+  const out = {}; let matched = 0;
+  grids.forEach(({ grid, merges }) => {
+    let base = null;
+    grid.forEach((cols) => cols.forEach((v) => { const m = /(20\d\d)\s*년\s*(\d{1,2})\s*월/.exec(v); if (m && !base) base = { y: +m[1], m: +m[2] }; }));
+    if (!base) { const m = /(20\d\d)\D{0,3}(\d{1,2})/.exec(fname || ""); if (m && +m[2] >= 1 && +m[2] <= 12) base = { y: +m[1], m: +m[2] }; }
+    const rows = [...grid.keys()].sort((a, b) => a - b), heads = [];
+    rows.forEach((r) => {
+      const cs = [...grid.get(r).entries()].filter(([c, v]) => /^\d{1,2}$/.test(v) && +v >= 1 && +v <= 31).sort((a, b) => a[0] - b[0]);
+      let best = [], cur = [];
+      cs.forEach(([c, v]) => { const prev = cur.length ? +cur[cur.length - 1][1] : null; if (prev !== null && (+v === prev + 1 || (+v === 1 && prev >= 28))) cur.push([c, v]); else cur = [[c, v]]; if (cur.length > best.length) best = cur.slice(); });
+      if (best.length >= 5) heads.push({ r, days: best.map(([c, v]) => { const mg = merges.find((m) => m.r1 === r && m.c1 === c); return { day: +v, c0: c, c1: mg ? mg.c2 : c }; }) });
+    });
+    if (!heads.length) return;
+    if (!base) { const m = /(\d{4})[-_.]?(\d{1,2})/.exec(fname || ""); const ans = prompt("몇 월 근무표인가요? (예: 2026-11)", m ? m[1] + "-" + m[2] : ""); const mm = /(20\d\d)\D+(\d{1,2})/.exec(ans || ""); if (!mm) throw new Error("몇 월인지 알 수 없어요"); base = { y: +mm[1], m: +mm[2] }; }
+    let curM = heads[0].days[0].day > 20 ? base.m - 1 : base.m, prevDay = 0;
+    const dcs = heads.map((h) => h.days.map((d) => { if (d.day < prevDay) curM++; prevDay = d.day; const dt = new Date(base.y, curM - 1, d.day); return { ...d, date: dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate()) }; }));
+    const slot = (date) => out[date] || (out[date] = { duty: new Set(), off: new Set(), seen: new Set() });
+    heads.forEach((h, hi) => {
+      const end = hi + 1 < heads.length ? heads[hi + 1].r : rows[rows.length - 1] + 1, first = h.days[0].c0;
+      for (let r = h.r + 1; r < end; r++) {
+        const row = grid.get(r); if (!row) continue;
+        const lefts = [...row.entries()].filter(([c]) => c < first).sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+        const who = lefts.map(exact).find(Boolean) || lefts.map(loose).find(Boolean);
+        const kind = lefts.map((v) => v.replace(/\s/g, "")).map((x) => (/^(당직|숙직|야간)/.test(x) ? "duty" : /^(휴무|휴가|비번)/.test(x) ? "off" : /^주간/.test(x) ? "day" : "")).find(Boolean);
+        row.forEach((v, c) => {
+          if (c < first) return; const dc = dcs[hi].find((d) => c >= d.c0 && c <= d.c1); if (!dc) return;
+          if (who) { const e = slot(dc.date), t = cls(v); matched++; e.seen.add(who.key); if (t === "duty") e.duty.add(who.key); else if (t === "off") e.off.add(who.key); }
+          else if (kind) { const toks = String(v).split(/[,，/·\n]+|\s+/).filter(Boolean); toks.forEach((tk) => { const pp = exact(tk); if (!pp) return; matched++; const e = slot(dc.date); e.seen.add(pp.key); if (kind === "duty") e.duty.add(pp.key); else if (kind === "off") e.off.add(pp.key); }); }
+        });
+      }
+    });
+  });
+  if (!matched) throw new Error("연락망에 있는 이름을 근무표에서 찾지 못했어요 (비상연락망을 먼저 불러왔는지, 근무표에 이름이 있는지 확인)");
+  const map = {}; Object.entries(out).forEach(([d, e]) => { map[d] = { duty: [...e.duty], off: [...e.off] }; });
+  return map;
+}
+document.addEventListener("change", async (e) => {
+  if (e.target.id !== "rsFile") return;
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try {
+    const ct = await getContacts(); if (ct.demo) throw new Error("비상연락망을 먼저 불러와 주세요");
+    const map = parseRoster(await loadGrids(await f.arrayBuffer()), f.name, ct.data);
+    const all = await getRosterAll(); const ds = Object.keys(map).sort();
+    await idbSet("roster", { map: { ...all, ...map }, ts: Date.now() });
+    toast(`${ds.length}일치 근무표 반영 (${ds[0].slice(5)} ~ ${ds[ds.length - 1].slice(5)})`, 4500); renderHome();
+  } catch (err) { toast("불러오지 못했어요: " + err.message, 6000); }
+});
 
 document.addEventListener("click", async (e) => {
   const m = e.target.closest(".dmode"); if (m) { dutyMode = dutyMode === m.dataset.m ? null : m.dataset.m; return renderHome(); }
