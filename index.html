@@ -82,6 +82,15 @@ input[type=text],input[type=date],select{width:100%;height:46px;font:inherit;fon
 .pitem b{display:block;font-size:16px}
 .pitem small{display:block;color:var(--muted);font-size:12px;word-break:break-all}
 #partList{max-height:52vh;overflow:auto;margin:8px 0}
+.hseg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:8px}
+.hseg button{flex:1;height:42px;border:0;background:var(--card);color:var(--ink);font:600 14px var(--font);cursor:pointer}
+.hseg button+button{border-left:1px solid var(--line)}
+.hseg button.on{background:var(--accent);color:var(--accent-ink)}
+#histList{max-height:46vh;overflow:auto;margin:8px 0}
+#histSum b{display:block;font-size:12px;color:var(--muted);font-weight:600;margin-bottom:2px}
+.hrow{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--line);padding:9px 2px;font-size:14px}
+.hrow .hwhen{color:var(--muted);font-size:12px;white-space:nowrap}
+.htag{display:inline-block;background:var(--accent-soft);border-radius:6px;padding:1px 6px;margin:2px 4px 0 0;font-size:12px}
 .toast{position:fixed;left:50%;bottom:calc(100px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:60;max-width:90%;text-align:center;white-space:pre-line}
 .toast[hidden]{display:none}
 .note{font-size:12px;color:var(--muted)}
@@ -91,6 +100,7 @@ input[type=text],input[type=date],select{width:100%;height:46px;font:inherit;fon
 <body>
 <header>
   <h1>사진대지 <span class="cnt" id="cnt"></span></h1>
+  <button class="iconbtn" id="histBtn" aria-label="교체 이력 조회">📊</button>
   <button class="iconbtn" id="menuBtn" aria-label="메뉴">⋯</button>
 </header>
 <main>
@@ -147,6 +157,20 @@ input[type=text],input[type=date],select{width:100%;height:46px;font:inherit;fon
     <div id="partList"></div>
     <button class="btn primary" id="partUse" hidden></button>
     <button class="btn" id="partClose">닫기</button>
+  </div>
+</div>
+
+<div class="sheet-back" id="histBack" hidden>
+  <div class="sheet">
+    <h3>교체 이력 조회</h3>
+    <div class="hseg" id="histPeriod">
+      <button data-p="today">오늘</button><button data-p="week">이번주</button><button class="on" data-p="month">이번달</button><button data-p="all">전체</button>
+    </div>
+    <input type="text" id="histQ" placeholder="역·호기·부품으로 거르기 (예: 이곡, ES3, 인버터)" autocomplete="off" enterkeyhint="search">
+    <div class="preview" id="histSum"></div>
+    <div id="histList"></div>
+    <p class="note">이 조회는 이 폰에서 만든 사진대지 기록만 모읍니다. 여러 사람·사무실 공용 집계는 서버 연결 뒤에 됩니다.</p>
+    <button class="btn" id="histClose">닫기</button>
   </div>
 </div>
 

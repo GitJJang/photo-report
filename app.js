@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.4.0";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -376,6 +376,7 @@ $("#make").onclick = async () => {
       parts.push(part);
       lines.push([xj.place, xj.work, xj.status].filter(Boolean).join(" "));
     }
+    logHistory(ready).catch(() => {});
     btn.textContent = "압축하는 중…";
     const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
     out = { blob, name: `사진대지_${ymd(new Date())}.zip`, ids: ready.map((j) => j.id), parts, sent: false, text: lines.join("\n") + "\n(사진대지 앱 등록)" };
@@ -457,7 +458,7 @@ twoTap($("#mPhotos"), "모든 작업의 사진 비우기", () => { S.jobs.forEac
 twoTap($("#mAll"), "작업 전부 지우기", () => { S.jobs = []; S.tray = []; S.sel = null; renderJobs(); });
 $("#mInstall").onclick = async () => { if (!deferredInstall) return; deferredInstall.prompt(); try { await deferredInstall.userChoice; } catch (e) {} deferredInstall = null; $("#menuBack").hidden = true; };
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredInstall = e; });
-[["adjBack", "adjDone"], ["outBack", "outClose"], ["menuBack", "menuClose"]].forEach(([back, btn]) => $("#" + back).addEventListener("click", (e) => { if (e.target.id === back) $("#" + btn).click(); }));
+[["adjBack", "adjDone"], ["outBack", "outClose"], ["menuBack", "menuClose"], ["histBack", "histClose"]].forEach(([back, btn]) => $("#" + back).addEventListener("click", (e) => { if (e.target.id === back) $("#" + btn).click(); }));
 
 /* ---------- 공유 메뉴로 받은 사진 ---------- */
 async function intakeShared() {
@@ -527,6 +528,70 @@ $("#partUse").onclick = () => { if (!partJob) return; partJob.part = $("#partQ")
 function closeParts() { $("#partBack").hidden = true; partJob = null; const y = scrollY; renderJobs(); scrollTo(0, y); }
 $("#partClose").onclick = () => { $("#partBack").hidden = true; partJob = null; };
 $("#partBack").addEventListener("click", (e) => { if (e.target.id === "partBack") $("#partClose").click(); });
+
+/* ---------- 교체 이력 조회 (이 폰에 쌓인 기록 기준) ---------- */
+const todayYmd = () => ymd(new Date());
+async function logHistory(ready) {
+  const hist = (await idbGet("history").catch(() => null)) || [];
+  const now = Date.now();
+  ready.forEach((j) => {
+    hist.push({
+      ts: now,
+      date: /^\d{8}$/.test(j.date || "") ? j.date : todayYmd(),
+      line: j.line || "", station: stationOf(j), kind: j.kind || "", unit: j.unit || "",
+      part: partOf(j), count: j.count || 1, status: j.status || "",
+    });
+  });
+  // 최근 3000건만 보관
+  await idbSet("history", hist.slice(-3000)).catch(() => {});
+}
+function periodStart(p) {
+  const d = new Date(); d.setHours(0, 0, 0, 0);
+  if (p === "today") return d.getTime();
+  if (p === "week") { const w = (d.getDay() + 6) % 7; d.setDate(d.getDate() - w); return d.getTime(); } // 월요일 시작
+  if (p === "month") { d.setDate(1); return d.getTime(); }
+  return 0; // all
+}
+function histDateMs(r) {
+  const s = r.date || "";
+  if (/^\d{8}$/.test(s)) return new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)).getTime();
+  return r.ts || 0;
+}
+let histState = { period: "month", q: "" };
+async function renderHist() {
+  const all = (await idbGet("history").catch(() => null)) || [];
+  const start = periodStart(histState.period);
+  const q = histState.q.trim().toLowerCase();
+  let rows = all.filter((r) => histDateMs(r) >= start);
+  if (q) rows = rows.filter((r) => [r.station, (r.kind || "") + (r.unit || ""), r.part, r.status].join(" ").toLowerCase().includes(q));
+  rows.sort((a, b) => histDateMs(b) - histDateMs(a) || b.ts - a.ts);
+
+  const sum = $("#histSum"), list = $("#histList");
+  if (!all.length) { sum.innerHTML = "<b>아직 기록이 없어요</b>사진대지를 만들면 여기에 역·호기·부품·개수가 한 건씩 쌓여요."; list.innerHTML = ""; return; }
+  if (!rows.length) { sum.innerHTML = "<b>해당 조건에 기록이 없어요</b>기간이나 검색어를 바꿔 보세요."; list.innerHTML = ""; return; }
+
+  const total = rows.reduce((n, r) => n + (+r.count || 1), 0);
+  const by = (key) => {
+    const m = new Map();
+    rows.forEach((r) => { const k = key(r) || "(미입력)"; m.set(k, (m.get(k) || 0) + (+r.count || 1)); });
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  };
+  const tags = (arr) => arr.slice(0, 8).map(([k, n]) => `<span class="htag">${esc(k)} ${n}</span>`).join("");
+  sum.innerHTML =
+    `<b>${rows.length}건 작업 · 부품 ${total}개</b>` +
+    `<div style="margin-top:4px"><b>역사별</b>${tags(by((r) => r.station))}</div>` +
+    `<div style="margin-top:4px"><b>부품별</b>${tags(by((r) => r.part))}</div>`;
+  list.innerHTML = rows.map((r) => {
+    const d = r.date && /^\d{8}$/.test(r.date) ? `${r.date.slice(4, 6)}/${r.date.slice(6, 8)}` : "";
+    const place = [r.station, r.unit ? (r.kind || "") + r.unit : ""].filter(Boolean).join(" ");
+    const work = [r.part, (+r.count ? r.count + "개" : "")].filter(Boolean).join(" ");
+    return `<div class="hrow"><span>${esc(place)} — ${esc(work)}${r.status ? " · " + esc(r.status) : ""}</span><span class="hwhen">${d}</span></div>`;
+  }).join("");
+}
+$("#histBtn").onclick = () => { $("#histBack").hidden = false; renderHist(); };
+$("#histClose").onclick = () => ($("#histBack").hidden = true);
+$("#histPeriod").addEventListener("click", (e) => { const b = e.target.closest("[data-p]"); if (!b) return; histState.period = b.dataset.p; [...$("#histPeriod").children].forEach((x) => x.classList.toggle("on", x === b)); renderHist(); });
+$("#histQ").addEventListener("input", (e) => { histState.q = e.target.value; renderHist(); });
 
 /* ---------- 시작 ---------- */
 async function init() {
