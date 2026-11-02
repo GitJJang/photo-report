@@ -232,6 +232,7 @@ textarea{width:100%;font:inherit;font-size:16px;color:var(--ink);background:var(
   <section class="page" id="pgPlan" hidden>
     <div class="demo" id="planDemo">샘플 화면 · 가짜 일정이에요</div>
     <div class="planbar"><label class="btn">월간점검표 파일 불러오기<input type="file" accept=".xlsx,.xlsm,.json,application/json" id="planFile"></label><button class="link" id="planClear" hidden>불러온 일정 지우기</button></div>
+    <details class="dtl"><summary>파일 저장이 안 되면: 붙여넣어서 불러오기</summary><textarea id="planPaste" rows="4" placeholder="받은 일정 글(JSON)을 그대로 붙여넣으세요"></textarea><button class="btn" id="planPasteGo">붙여넣은 내용으로 불러오기</button></details>
     <div class="hseg" id="planPeriod"><button data-p="today" class="on">오늘</button><button data-p="week">이번주</button><button data-p="month">이번달</button></div>
     <div class="chips" id="planKind"></div>
     <div id="planList"></div>

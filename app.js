@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.7.2";
+const APP_VERSION = "1.7.3";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -719,7 +719,7 @@ async function renderHome() {
     '<div class="grp"><h3>승강관리소 직원</h3><div class="cols c3">' +
     ["통상", "1호선", "2호선"].map((k) => `<div class="col ${cls[k]}"><div class="ch">${k === "통상" ? "통상" : k + " 담당"}</div><div class="cb">${body(st[k])}</div></div>`).join("") +
     `</div></div><div class="grp"><h3>승강업체 비상연락망${ct.demo ? "" : ""}</h3><div class="cols c2">` + ["1호선", "2호선"].map(venCol).join("") +
-    `</div><div class="planbar" style="margin-top:8px"><label class="btn">비상연락망 불러오기(엑셀)<input type="file" accept=".xlsx,.xlsm,.json,application/json" id="ctFile"></label>${ct.demo ? "" : '<button class="link" id="ctClear">지우기</button>'}</div>${ct.demo ? "" : `<div class="planbar"><label class="btn">업체 근무표 불러오기(엑셀)<input type="file" accept=".xlsx,.xlsm" id="rsFile"></label>${duty.has ? '<small class="note">오늘 근무 반영됨</small>' : '<small class="note">오늘 근무표 없음</small>'}</div>`}</div>`;
+    `</div><div class="planbar" style="margin-top:8px"><label class="btn">비상연락망 불러오기(엑셀)<input type="file" accept=".xlsx,.xlsm,.json,application/json" id="ctFile"></label>${ct.demo ? "" : '<button class="link" id="ctClear">지우기</button>'}</div><details class="dtl"><summary>파일 저장이 안 되면: 붙여넣어서 불러오기</summary><textarea id="ctPaste" rows="4" placeholder="받은 연락망 글(JSON)을 그대로 붙여넣으세요"></textarea><button class="btn" id="ctPasteGo">붙여넣은 내용으로 불러오기</button></details>${ct.demo ? "" : `<div class="planbar"><label class="btn">업체 근무표 불러오기(엑셀)<input type="file" accept=".xlsx,.xlsm" id="rsFile"></label>${duty.has ? '<small class="note">오늘 근무 반영됨</small>' : '<small class="note">오늘 근무표 없음</small>'}</div>`}</div>`;
   $("#hPlan").innerHTML = `<div class="sec"><h2>오늘 작업 · ${dLabel(new Date())}</h2></div>` + (todays.map(itemHtml).join("") || '<div class="empty">오늘 작업이 없어요</div>');
   $("#hAcc").innerHTML = '<div class="sec"><h2>최근 사고</h2></div>' + accAll.list.slice().sort((a, b) => itemDate(b) - itemDate(a)).slice(0, 3).map(accHtml).join("");
 }
@@ -777,6 +777,17 @@ document.addEventListener("change", async (e) => {
     await idbSet("roster", { map: { ...all, ...map }, ts: Date.now() });
     toast(`${ds.length}일치 근무표 반영 (${ds[0].slice(5)} ~ ${ds[ds.length - 1].slice(5)})`, 4500); renderHome();
   } catch (err) { toast("불러오지 못했어요: " + err.message, 6000); }
+});
+
+/* 파일 저장이 안 되는 폰을 위한 '붙여넣어서 불러오기' */
+function pasteInto(inputId, text) {
+  const t = String(text || "").trim(); if (!t) return toast("붙여넣은 내용이 없어요");
+  const dt = new DataTransfer(); dt.items.add(new File([t], "paste.json", { type: "application/json" }));
+  const el = $("#" + inputId); el.files = dt.files; el.dispatchEvent(new Event("change", { bubbles: true }));
+}
+document.addEventListener("click", (e) => {
+  if (e.target.id === "planPasteGo") { pasteInto("planFile", $("#planPaste").value); $("#planPaste").value = ""; }
+  if (e.target.id === "ctPasteGo") { pasteInto("ctFile", $("#ctPaste").value); }
 });
 
 document.addEventListener("click", async (e) => {
