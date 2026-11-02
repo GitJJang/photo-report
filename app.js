@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.7.1";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -966,6 +966,7 @@ function accFill(r) {
   A("aDate").value = r.date || todayKey(); A("aLine").value = ln;
   const inList = DATA.lines.find((l) => l.name === ln).stations.includes(r.station);
   accFillStations(ln, inList ? r.station : (r.station ? "__c" : ""));
+  A("aStn").value = inList ? r.station : (r.station ? "__c" : "");
   A("aStnC").hidden = inList || !r.station; A("aStnC").value = inList ? "" : (r.station || "");
   A("aUnit").value = r.unit || ""; segSet("aKind", accForm.kind); segSet("aType", accForm.type); segSet("aNon", accForm.non); segSet("aDone", accForm.done);
   A("aNonT").hidden = accForm.non !== "있음"; A("aNonT").value = accForm.non === "있음" ? r.nonrun || "" : "";
@@ -1024,6 +1025,16 @@ A("aParse").onclick = async () => {
   A("accBack").hidden = true; toast(bl.length + "건 저장했어요"); renderStat();
 };
 A("aSave").onclick = async () => { const r = accRead(); if (!r.station && !r.what) return toast("역 또는 내용을 입력하세요"); await accSaveRec(r); A("accBack").hidden = true; toast("저장했어요"); renderStat(); };
+A("aSend").onclick = () => {
+  const r = accRead(); if (!r.station && !r.what) return toast("역 또는 내용을 입력하세요");
+  const text = accText(r);
+  // 공유 창은 누른 직후에 바로 띄워야 해서(안 그러면 막힘) 먼저 호출하고, 저장은 같이 진행
+  let sp = null;
+  if (navigator.share) sp = navigator.share({ text });
+  accForm.id = r.id; const saving = accSaveRec(r).catch(() => {});
+  if (!sp) { navigator.clipboard.writeText(text).then(() => toast("이 기기는 바로 보내기를 지원하지 않아 복사했어요. 단톡방에 붙여넣으세요", 5000), () => toast("복사하지 못했어요")); saving.then(renderStat); return; }
+  sp.then(() => { A("accBack").hidden = true; toast("보냈어요. 저장도 됐어요"); }).catch((e) => { toast(e && e.name === "AbortError" ? "보내기를 취소했어요 (저장은 됐어요)" : "보내지 못했어요: " + (e && e.message), 5000); }).finally(() => saving.then(renderStat));
+};
 A("aCopy").onclick = async () => { try { await navigator.clipboard.writeText(accText(accRead())); toast("복사했어요. 단톡방에 붙여넣으세요"); } catch (e) { toast("복사하지 못했어요"); } };
 A("aDel").onclick = async () => { if (!confirm("이 기록을 지울까요?")) return; const all = ((await idbGet("acc").catch(() => null)) || []).filter((x) => x.id !== accForm.id); await idbSet("acc", all); A("accBack").hidden = true; renderStat(); };
 $("#accList").addEventListener("click", async (e) => { const it = e.target.closest("[data-id]"); if (!it) return; const all = (await idbGet("acc").catch(() => null)) || []; const r = all.find((x) => x.id === +it.dataset.id); if (r) openAcc(r); });

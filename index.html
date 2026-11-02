@@ -349,8 +349,10 @@ textarea{width:100%;font:inherit;font-size:16px;color:var(--ink);background:var(
     <label class="f">비고 (CCTV 확인 결과, 자재 수급 지연 등)</label><textarea id="aNote" rows="2"></textarea>
     <label class="f">처리 상태</label>
     <div class="seg" id="aDone"><button data-v="1" class="on">처리 완료</button><button data-v="0">처리 중</button></div>
-    <button class="btn primary" id="aSave">저장</button>
+    <button class="btn primary" id="aSend">저장하고 카톡으로 보내기</button>
+    <button class="btn" id="aSave">저장만 하기</button>
     <button class="btn" id="aCopy">카톡용 문구 복사</button>
+    <p class="note" id="aSendNote">누르면 카톡 보내기 창이 떠요. 1호선 단톡방을 고르고 전송만 누르세요. 한 번 보낸 방은 다음부터 맨 위에 보여요.</p>
     <button class="btn danger" id="aDel" hidden>삭제</button>
     <button class="btn" id="aClose">닫기</button>
   </div>
