@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.5.1";
+const APP_VERSION = "1.6.0";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -587,44 +587,306 @@ $("#histPeriod").addEventListener("click", (e) => { const b = e.target.closest("
 $("#histQ").addEventListener("input", (e) => { histState.q = e.target.value; renderHist(); });
 
 
-/* ---------- 탭 · 홈 ---------- */
-const TITLES = { home: "승강업무", photo: "사진대지", hist: "교체 이력" };
-let curTab = "home";
+/* ---------- 탭 ---------- */
+const TABS = ["home", "plan", "stock", "stat", "photo"];
+const TITLES = { home: "승강업무", plan: "일정", stock: "창고 재고", stat: "현황", photo: "사진대지" };
+const pgOf = (k) => $("#pg" + k[0].toUpperCase() + k.slice(1));
+let curTab = "home", statSeg = "acc";
 function showTab(t) {
   curTab = t;
-  ["home", "photo", "hist"].forEach((k) => { $("#pg" + k[0].toUpperCase() + k.slice(1)).hidden = k !== t; });
+  TABS.forEach((k) => { pgOf(k).hidden = k !== t; });
   [...$("#tabs").children].forEach((b) => b.classList.toggle("on", b.dataset.t === t));
   $("#ttl").textContent = TITLES[t]; $("#actBar").hidden = t !== "photo"; $("#cnt").hidden = t !== "photo";
   if (t === "photo") renderJobs();
-  if (t === "hist") renderHist();
   if (t === "home") renderHome();
+  if (t === "plan") renderPlan();
+  if (t === "stock") renderStock();
+  if (t === "stat") renderStat();
   scrollTo(0, 0);
   try { localStorage.setItem("sdj-tab", t); } catch (e) {}
 }
 $("#tabs").addEventListener("click", (e) => { const b = e.target.closest("[data-t]"); if (b) showTab(b.dataset.t); });
-// 데이터 읽는 곳을 한 군데로 모아 둠: 나중에 사내 서버로 바뀌면 이 함수만 고치면 됨
-async function loadData(name) { const r = await fetch("data/" + name + ".json", { cache: "no-cache" }); if (!r.ok) throw new Error(name); return r.json(); }
+
+/* ---------- 데이터 읽는 곳 (나중에 사내 서버로 바뀌면 여기만 고치면 됨) ---------- */
+const dataCache = {};
+async function loadData(name) { if (dataCache[name]) return dataCache[name]; const r = await fetch("data/" + name + ".json", { cache: "no-cache" }); if (!r.ok) throw new Error(name); return (dataCache[name] = await r.json()); }
+async function getPlan() {
+  let st = null; try { st = await idbGet("plan"); } catch (e) {}
+  if (st && st.items && st.items.length) return { items: st.items, demo: false };
+  const d = await loadData("sample").catch(() => ({})); return { items: d.plan || [], demo: true };
+}
+const today0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+function itemDate(it) { if (it.date) { const [y, m, d] = it.date.split("-").map(Number); return new Date(y, m - 1, d); } const d = today0(); d.setDate(d.getDate() + (it.off || 0)); return d; }
+const WD = "일월화수목금토";
+const dLabel = (d) => `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]})`;
 const telHref = (t) => "tel:" + String(t || "").replace(/[^\d+]/g, "");
-const callBtn = (t) => `<a class="call" href="${esc(telHref(t))}"><svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A15 15 0 013 6a2 2 0 012-2z"/></svg>전화</a>`;
+const chipsHtml = (list, cur) => list.map(([v, l]) => `<button data-f="${v}"${v === cur ? ' class="on"' : ""}>${l}</button>`).join("");
+const stnHtml = (t) => esc(t).replace(/([가-힣A-Za-z0-9]+?)(\([^)]*\))/g, "<b>$1</b><i>$2</i>");
+const CATS = ["점검", "검사", "중보수", "수선"];
+const catCls = { "점검": "c1", "검사": "c2", "중보수": "c3", "수선": "c3" };
+const lineCls = { "1호선": "l1", "2호선": "l2" };
+const itemHtml = (it) => `<div class="item"><div><span class="cat ${catCls[it.cat] || "c1"}">${esc(it.cat)}</span>${it.line ? `<span class="lt ${lineCls[it.line] || ""}"></span><small class="sub2">${esc(it.line)} ${esc(it.kind || "")}</small>` : ""}</div><div class="stn" style="margin-top:5px;font-size:15px;line-height:1.5">${stnHtml(it.text)}</div></div>`;
+
+
+/* ---------- 비상연락망(업체) · 오늘 당직 지정 ---------- */
+let dutyMode = null;
+async function getContacts() {
+  let st = null; try { st = await idbGet("contacts"); } catch (e) {}
+  if (st && st.data) return { data: st.data, demo: false };
+  const d = await loadData("sample").catch(() => ({})); return { data: (d.work && d.work.vendor) || {}, demo: true };
+}
+async function getDuty() { try { const s = await idbGet("duty"); if (s && s.date === ymd(new Date())) return s.names || []; } catch (e) {} return []; }
+async function toggleDuty(key) { const cur = new Set(await getDuty()); cur.has(key) ? cur.delete(key) : cur.add(key); await idbSet("duty", { date: ymd(new Date()), names: [...cur] }); }
+const telNorm = (t) => { const d = String(t).replace(/\D/g, ""); return d.length === 11 ? d.replace(/(\d{3})(\d{4})(\d{4})/, "$1-$2-$3") : d.length === 10 ? d.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3") : String(t); };
+function parseContacts(grids) {
+  const res = {}, blocks = [];
+  grids.forEach(({ grid }) => {
+    [...grid.keys()].sort((a, b) => a - b).forEach((r) => {
+      const row = grid.get(r);
+      [...row.entries()].filter(([c, v]) => v.replace(/\s/g, "") === "성명").forEach(([c]) => {
+        const right = [...row.entries()].filter(([cc]) => cc > c).sort((a, b) => a[0] - b[0]);
+        const rc = (right.find(([, v]) => v.replace(/\s/g, "") === "직급") || [])[0];
+        const tc = (right.find(([cc, v]) => /^(HP|H\.P|핸드폰|휴대폰|연락처|전화)/i.test(v.replace(/\s/g, "")) && (!rc || cc > rc)) || [])[0];
+        if (!tc) return; blocks.push({ grid, r, nc: c, rc, tc });
+      });
+    });
+  });
+  blocks.sort((a, b) => a.r - b.r || a.nc - b.nc);
+  blocks.forEach((b, i) => {
+    let line = null, inn = "", gen = "";
+    for (let r = b.r - 1; r >= Math.max(1, b.r - 6); r--) {
+      const row = b.grid.get(r); if (!row) continue;
+      row.forEach((v, c) => {
+        if (c < b.nc - 2 || c > b.tc + 1) return;
+        const m = /([12])\s*호선/.exec(v); if (m && !line) line = m[1] + "호선";
+        const L = v.replace(/\s/g, "");
+        const nextVal = () => { const rr = [...row.entries()].filter(([cc]) => cc > c).sort((a, b2) => a[0] - b2[0])[0]; return rr ? rr[1] : ""; };
+        if (/^사내전화/.test(L) && !inn) inn = nextVal();
+        if (/^일반전화/.test(L) && !gen) gen = nextVal();
+      });
+    }
+    line = line || (i === 0 ? "1호선" : "2호선"); if (res[line]) return;
+    const people = []; let miss = 0;
+    const last = Math.max(...b.grid.keys());
+    for (let r = b.r + 1; r <= last; r++) {
+      const row = b.grid.get(r) || new Map(), name = (row.get(b.nc) || "").trim(), tel = (row.get(b.tc) || "").trim();
+      if (!name || !/\d{3,4}[-\s]?\d{4}/.test(tel)) { if (++miss >= 3) break; continue; } miss = 0;
+      if (/^(성명|NO)$/i.test(name)) break;
+      people.push({ name, role: b.rc ? (row.get(b.rc) || "").trim() : "", tel: telNorm(tel) });
+    }
+    if (people.length) res[line] = { co: "", in: inn, gen: gen, people };
+  });
+  if (!Object.keys(res).length) throw new Error("비상연락망 모양을 찾지 못했어요 (성명·직급·HP 칸이 필요해요)");
+  return res;
+}
+
+/* ---------- 홈 ---------- */
+const callIc = '<svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A15 15 0 013 6a2 2 0 012-2z"/></svg>';
 async function renderHome() {
-  let d; try { d = await loadData("sample"); } catch (e) { $("#hWork").innerHTML = '<div class="empty">데이터를 불러오지 못했어요</div>'; return; }
-  const w = d.work || {}, st = w.staff || {}, vd = w.vendor || {};
-  const ph = '<svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A15 15 0 013 6a2 2 0 012-2z"/></svg>';
-  const cell = (p) => `<a class="pc" href="${esc(telHref(p.tel))}"><span>${p.role ? `<small>${esc(p.role)}</small>` : ""}${esc(p.name)}</span>${ph}</a>`;
+  const [d, pl] = await Promise.all([loadData("sample").catch(() => null), getPlan()]);
+  if (!d) { $("#hWork").innerHTML = '<div class="empty">데이터를 불러오지 못했어요</div>'; return; }
+  const t0 = today0().getTime();
+  const todays = pl.items.filter((it) => itemDate(it).getTime() === t0).sort((a, b) => CATS.indexOf(a.cat) - CATS.indexOf(b.cat));
+  const openAcc = (d.acc || []).filter((a) => !a.done).length, lng = (d.longrepair || []).length;
+  $("#hTiles").innerHTML =
+    `<button class="tile2" data-go="plan"><b>${todays.length}</b><small>오늘 작업</small></button>` +
+    `<button class="tile2${openAcc ? " warn2" : ""}" data-go="stat" data-seg="acc"><b>${openAcc}</b><small>처리 중 사고</small></button>` +
+    `<button class="tile2${lng ? " warn2" : ""}" data-go="stat" data-seg="long"><b>${lng}</b><small>장기 미수선</small></button>`;
+  const ct = await getContacts(), duty = await getDuty();
+  const cell = (p) => `<a class="pc" href="${esc(telHref(p.tel))}"><span>${esc(p.name)}${p.role ? `<small class="rk">${esc(p.role)}</small>` : ""}</span>${callIc}</a>`;
   const body = (arr) => (arr && arr.length ? arr.map(cell).join("") : '<div class="empty1">없음</div>');
   const cls = { "통상": "l0", "1호선": "l1", "2호선": "l2" };
+  const dutyCell = (k, p, on) => `<button class="pc dpick${on ? " on" : ""}" data-k="${k}|${esc(p.name)}"><span>${esc(p.name)}${p.role ? `<small class="rk">${esc(p.role)}</small>` : ""}</span><em>${on ? "당직 ✓" : "당직"}</em></button>`;
+  const venCol = (k) => {
+    const v = ct.data[k] || {}, ppl = v.people || [], set = new Set(duty), isOn = (p) => set.has(k + "|" + p.name);
+    const dayP = ppl.filter((p) => !isOn(p)), dutyP = ppl.filter(isOn);
+    const nums = `<div class="nums">${v.in ? `<span>사내 ${esc(v.in)}</span>` : ""}${v.gen ? `<a href="${esc(telHref(v.gen))}">일반 ${esc(v.gen)}</a>` : ""}</div>`;
+    const inner = dutyMode === k
+      ? `<div class="sub duty">눌러서 오늘 당직 지정</div>${ppl.map((p) => dutyCell(k, p, isOn(p))).join("")}`
+      : `<div class="sub">주간 ${dayP.length}명</div>${body(dayP)}<div class="sub duty">당직 ${dutyP.length}명</div>${body(dutyP)}`;
+    return `<div class="col ${cls[k]}"><div class="ch">${k} · ${esc(v.co || "")}</div>${nums}<div class="cb">${inner}</div><button class="link dmode" data-m="${k}">${dutyMode === k ? "지정 끝내기" : "오늘 당직 지정"}</button></div>`;
+  };
+  const w = d.work || {}, st = w.staff || {};
   $("#hWork").innerHTML =
     '<div class="grp"><h3>승강관리소 직원</h3><div class="cols c3">' +
     ["통상", "1호선", "2호선"].map((k) => `<div class="col ${cls[k]}"><div class="ch">${k === "통상" ? "통상" : k + " 담당"}</div><div class="cb">${body(st[k])}</div></div>`).join("") +
-    '</div></div>' +
-    '<div class="grp"><h3>승강업체</h3><div class="cols c2">' +
-    ["1호선", "2호선"].map((k) => { const v = vd[k] || {}; return `<div class="col ${cls[k]}"><div class="ch">${k} · ${esc(v.co || "")}</div><div class="cb"><div class="sub">주간 ${(v.day || []).length}명</div>${body(v.day)}<div class="sub duty">당직 ${(v.duty || []).length}명</div>${body(v.duty)}</div></div>`; }).join("") +
-    '</div></div>';
-  $("#hPlan").innerHTML = '<div class="sec"><h2>오늘 작업</h2></div>' +
-    ((d.plan || []).map((p) => `<div class="prow"><div class="who"><b>${esc(p.place)}</b><small><span class="pill">${esc(p.kind)}</span>${esc(p.who)}</small></div></div>`).join("") || '<div class="empty">오늘 작업이 없어요</div>');
-  $("#hAcc").innerHTML = '<div class="sec"><h2>최근 사고</h2></div>' +
-    ((d.acc || []).map((p) => `<div class="prow"><div class="who"><b>${esc(p.place)}</b><small><span class="pill ${p.done ? "ok" : "bad"}">${p.done ? "처리 완료" : "처리 중"}</span>${esc(p.date)} · ${esc(p.what)}</small></div></div>`).join("") || '<div class="empty">사고 기록이 없어요</div>');
+    `</div></div><div class="grp"><h3>승강업체 비상연락망${ct.demo ? "" : ""}</h3><div class="cols c2">` + ["1호선", "2호선"].map(venCol).join("") +
+    `</div><div class="planbar" style="margin-top:8px"><label class="btn">비상연락망 불러오기(엑셀)<input type="file" accept=".xlsx,.xlsm,.json,application/json" id="ctFile"></label>${ct.demo ? "" : '<button class="link" id="ctClear">지우기</button>'}</div></div>`;
+  $("#hPlan").innerHTML = `<div class="sec"><h2>오늘 작업 · ${dLabel(new Date())}</h2></div>` + (todays.map(itemHtml).join("") || '<div class="empty">오늘 작업이 없어요</div>');
+  $("#hAcc").innerHTML = '<div class="sec"><h2>최근 사고</h2></div>' + (d.acc || []).slice(0, 3).map(accHtml).join("");
 }
+
+document.addEventListener("click", async (e) => {
+  const m = e.target.closest(".dmode"); if (m) { dutyMode = dutyMode === m.dataset.m ? null : m.dataset.m; return renderHome(); }
+  const dp = e.target.closest(".dpick"); if (dp) { await toggleDuty(dp.dataset.k); return renderHome(); }
+  if (e.target.id === "ctClear") { if (confirm("불러온 비상연락망을 지우고 샘플로 되돌릴까요?")) { await idbSet("contacts", {}); renderHome(); } }
+});
+document.addEventListener("change", async (e) => {
+  if (e.target.id !== "ctFile") return;
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try {
+    let data;
+    if (/\.json$/i.test(f.name)) { const j = JSON.parse(await f.text()); data = j.contacts; } else data = parseContacts(await loadGrids(await f.arrayBuffer()));
+    if (!data || !Object.keys(data).length) throw new Error("읽을 연락처가 없어요");
+    const old = (await idbGet("contacts").catch(() => null)) || {}; const cur = old.data || {};
+    Object.keys(data).forEach((k) => { if (!data[k].co && cur[k] && cur[k].co) data[k].co = cur[k].co; });
+    await idbSet("contacts", { data: { ...cur, ...data }, ts: Date.now() });
+    toast(`연락처 ${Object.values(data).reduce((n, v) => n + v.people.length, 0)}명 불러왔어요`, 4000); renderHome();
+  } catch (err) { toast("불러오지 못했어요: " + err.message, 6000); }
+});
+$("#hTiles").addEventListener("click", (e) => { const b = e.target.closest("[data-go]"); if (!b) return; if (b.dataset.seg) statSeg = b.dataset.seg; showTab(b.dataset.go); });
+
+/* ---------- 일정 ---------- */
+const planState = { p: "today", f: "all" };
+function planRange(p) {
+  const t = today0();
+  if (p === "today") return [t, t];
+  if (p === "week") { const a = new Date(t); a.setDate(t.getDate() - t.getDay()); const b = new Date(a); b.setDate(a.getDate() + 6); return [a, b]; } // 일요일 시작(점검표와 같게)
+  return [new Date(t.getFullYear(), t.getMonth(), 1), new Date(t.getFullYear(), t.getMonth() + 1, 0)];
+}
+async function renderPlan() {
+  const { items, demo } = await getPlan();
+  $("#planDemo").hidden = !demo; $("#planClear").hidden = demo;
+  $("#planKind").innerHTML = chipsHtml([["all", "전체"], ["1호선", "1호선"], ["2호선", "2호선"], ["검사", "검사"], ["중보수", "중보수"]], planState.f);
+  [...$("#planPeriod").children].forEach((b) => b.classList.toggle("on", b.dataset.p === planState.p));
+  const [a, b] = planRange(planState.p), f = planState.f;
+  const rows = items.map((it) => ({ it, d: itemDate(it) })).filter((x) => x.d >= a && x.d <= b)
+    .filter((x) => f === "all" || (f === "1호선" || f === "2호선" ? x.it.line === f : x.it.cat === f))
+    .sort((x, y) => x.d - y.d || CATS.indexOf(x.it.cat) - CATS.indexOf(y.it.cat) || (x.it.line || "").localeCompare(y.it.line || "") || (x.it.kind || "").localeCompare(y.it.kind || ""));
+  if (!rows.length) { $("#planList").innerHTML = `<div class="empty">이 기간·조건에 일정이 없어요${demo ? "" : "<br>다른 달 점검표는 위 버튼으로 불러오세요."}</div>`; return; }
+  let html = "", last = -1; const t0 = today0().getTime();
+  rows.forEach((x) => { const k = x.d.getTime(); if (k !== last) { html += `<div class="dayh${k === t0 ? " today" : ""}">${dLabel(x.d)}${k === t0 ? " · 오늘" : ""}</div>`; last = k; } html += itemHtml(x.it); });
+  $("#planList").innerHTML = html;
+}
+$("#planPeriod").addEventListener("click", (e) => { const b = e.target.closest("[data-p]"); if (b) { planState.p = b.dataset.p; renderPlan(); } });
+$("#planKind").addEventListener("click", (e) => { const b = e.target.closest("[data-f]"); if (b) { planState.f = b.dataset.f; renderPlan(); } });
+$("#planClear").onclick = async () => { if (!confirm("이 폰에 불러온 일정을 모두 지울까요?")) return; await idbSet("plan", { items: [] }); renderPlan(); toast("지웠어요"); };
+
+/* 월간점검표 엑셀(.xlsx/.xlsm) 읽기 — AI 없이 표 모양(요일 줄·분류 칸)으로 직접 읽음, 파일은 이 폰 밖으로 나가지 않음 */
+const xColNum = (ref) => { const m = /^([A-Z]+)(\d+)$/.exec(ref); let c = 0; for (const ch of m[1]) c = c * 26 + ch.charCodeAt(0) - 64; return [c, +m[2]]; };
+async function loadGrids(buf) {
+  const zip = await JSZip.loadAsync(buf);
+  const txt = async (p) => { const f = zip.file(p); return f ? f.async("string") : null; };
+  const dom = (s) => new DOMParser().parseFromString(s, "application/xml");
+  const ss = [], sx = await txt("xl/sharedStrings.xml");
+  if (sx) [...dom(sx).getElementsByTagName("si")].forEach((si) => ss.push([...si.getElementsByTagName("t")].filter((t) => t.parentNode.nodeName !== "rPh").map((t) => t.textContent).join("")));
+  const names = Object.keys(zip.files).filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort((a, b) => parseInt(a.match(/(\d+)\.xml/)[1]) - parseInt(b.match(/(\d+)\.xml/)[1]));
+  const out = [];
+  for (const sn of names) {
+    const x = dom(await txt(sn)), grid = new Map(), merges = [];
+    [...x.getElementsByTagName("c")].forEach((c) => {
+      const [col, row] = xColNum(c.getAttribute("r")), t = c.getAttribute("t"); let v = "";
+      if (t === "inlineStr") v = [...c.getElementsByTagName("t")].map((e) => e.textContent).join("");
+      else { const ve = c.getElementsByTagName("v")[0]; if (!ve) return; v = t === "s" ? ss[+ve.textContent] || "" : ve.textContent; }
+      v = String(v).trim(); if (!v) return;
+      if (!grid.has(row)) grid.set(row, new Map()); grid.get(row).set(col, v);
+    });
+    [...x.getElementsByTagName("mergeCell")].forEach((m) => { const [a, b] = m.getAttribute("ref").split(":"); if (!b) return; const [c1, r1] = xColNum(a), [c2, r2] = xColNum(b); merges.push({ c1, r1, c2, r2 }); });
+    out.push({ grid, merges });
+  }
+  return out;
+}
+async function readXlsx(buf, fname) {
+  const grids = await loadGrids(buf);
+  const items = []; let title = "";
+  for (const { grid, merges } of grids) {
+    let base = null;
+    grid.forEach((cols) => cols.forEach((v) => { const m = /(20\d\d)\s*년\s*(\d{1,2})\s*월/.exec(v); if (m && !base) base = { y: +m[1], m: +m[2] }; }));
+    if (!base) { const m = /(20\d\d)\D{0,3}(\d{1,2})/.exec(fname || ""); if (m && +m[2] >= 1 && +m[2] <= 12) base = { y: +m[1], m: +m[2] }; }
+    const rowsSorted = [...grid.keys()].sort((a, b) => a - b);
+    // 요일 줄 아래 "날짜 숫자 줄" 찾기: 1~31이 5개 이상 이어지는 줄
+    const heads = [];
+    rowsSorted.forEach((r) => {
+      const cs = [...grid.get(r).entries()].filter(([c, v]) => /^\d{1,2}$/.test(v) && +v >= 1 && +v <= 31).sort((a, b) => a[0] - b[0]);
+      let best = [], cur = [];
+      cs.forEach(([c, v], i) => { const prev = cur.length ? +cur[cur.length - 1][1] : null; if (prev !== null && (+v === prev + 1 || (+v === 1 && prev >= 28))) cur.push([c, v]); else cur = [[c, v]]; if (cur.length > best.length) best = cur.slice(); });
+      if (best.length >= 5) heads.push({ r, days: best.map(([c, v]) => { const mg = merges.find((m) => m.r1 === r && m.c1 === c); return { day: +v, c0: c, c1: mg ? mg.c2 : c }; }) });
+    });
+    if (!heads.length) continue;
+    if (!base) { const m = /(\d{4})[-_.]?(\d{1,2})/.exec(fname || ""); const ans = prompt("몇 월 일정인가요? (예: 2026-11)", m ? m[1] + "-" + m[2] : ""); const mm = /(20\d\d)\D+(\d{1,2})/.exec(ans || ""); if (!mm) throw new Error("몇 월인지 알 수 없어요"); base = { y: +mm[1], m: +mm[2] }; }
+    title = base.y + "년 " + base.m + "월";
+    let curM = heads[0].days[0].day > 20 ? base.m - 1 : base.m, prevDay = 0;
+    const dateOfHead = heads.map((h) => h.days.map((d) => { if (d.day < prevDay) curM++; prevDay = d.day; return { ...d, date: new Date(base.y, curM - 1, d.day) }; }));
+    const cell = (r, c) => { const row = grid.get(r); return row ? row.get(c) : undefined; };
+    heads.forEach((h, hi) => {
+      const end = hi + 1 < heads.length ? heads[hi + 1].r : (rowsSorted[rowsSorted.length - 1] + 1), first = h.days[0].c0, dcs = dateOfHead[hi];
+      for (let r = h.r + 1; r < end; r++) {
+        let label = ""; const row = grid.get(r);
+        if (row) for (const [c, v] of [...row.entries()].sort((a, b) => a[0] - b[0])) if (c < first) { label = v; break; }
+        if (!label) { const m = merges.find((m) => m.r1 < r && m.r2 >= r && m.c1 < first); if (m) label = cell(m.r1, m.c1) || ""; }
+        const L = label.replace(/\s/g, ""); let cls = null;
+        const ln = (/([12])\s*호선/.exec(L) || /([12])/.exec(L) || [])[1];
+        if (/^EL/i.test(L)) cls = { cat: "점검", kind: "EL", line: (ln || "1") + "호선" };
+        else if (/^ES/i.test(L)) cls = { cat: "점검", kind: "ES", line: (ln || "1") + "호선" };
+        else if (/^검사/.test(L)) cls = { cat: "검사", kind: "", line: "" };
+        else if (/^중보수/.test(L)) cls = { cat: "중보수", kind: "", line: "" };
+        else if (/^수선/.test(L)) cls = { cat: "수선", kind: "", line: "" };
+        if (!cls || !row) continue;
+        row.forEach((v, c) => {
+          if (c < first) return; const dc = dcs.find((d) => c >= d.c0 && c <= d.c1); if (!dc) return;
+          const text = v.split(/\r?\n/).map((s) => s.trim()).filter((s) => s && !/^[-–—\s]+$/.test(s)).join(" · "); if (!text) return;
+          const dt = dc.date; items.push({ date: dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate()), ...cls, text });
+        });
+      }
+    });
+  }
+  if (!items.length) throw new Error("월간점검표 모양을 찾지 못했어요 (날짜 숫자 줄과 EL/ES/검사/중보수 칸이 필요해요)");
+  return { name: title + " 월간점검표", items };
+}
+$("#planFile").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try {
+    const res = /\.json$/i.test(f.name) ? JSON.parse(await f.text()) : await readXlsx(await f.arrayBuffer(), f.name);
+    const items = (res.items || []).filter((it) => it && /^\d{4}-\d{2}-\d{2}$/.test(it.date || "") && it.text && it.cat);
+    if (!items.length) throw new Error("읽을 일정이 없어요");
+    let st = null; try { st = await idbGet("plan"); } catch (er) {}
+    const nd = new Set(items.map((i) => i.date)); // 같은 날짜는 새 파일 내용으로 바꿈
+    const keep = ((st && st.items) || []).filter((i) => !nd.has(i.date));
+    await idbSet("plan", { items: keep.concat(items), ts: Date.now() });
+    const ds = [...nd].sort(); toast(`${items.length}건 불러왔어요 (${ds[0].slice(5)} ~ ${ds[ds.length - 1].slice(5)})`, 4500);
+    renderPlan();
+  } catch (err) { toast("불러오지 못했어요: " + err.message, 6000); }
+});
+
+/* ---------- 재고 ---------- */
+const stockState = { q: "", f: "all" };
+async function renderStock() {
+  const d = await loadData("sample").catch(() => ({})); let arr = (d.stock || []).slice();
+  $("#stockF").innerHTML = chipsHtml([["all", "전체"], ["zero", "없는 것"], ["low", "부족(2개 이하)"]], stockState.f);
+  const q = stockState.q.toLowerCase().replace(/\s/g, "");
+  if (q) arr = arr.filter((x) => hasText((x.n + x.sp).toLowerCase().replace(/\s/g, ""), q));
+  if (stockState.f === "zero") arr = arr.filter((x) => x.qty === 0); else if (stockState.f === "low") arr = arr.filter((x) => x.qty <= 2);
+  arr.sort((a, b) => a.qty - b.qty || a.n.localeCompare(b.n, "ko"));
+  $("#stockList").innerHTML = arr.map((x) => {
+    const cc = x.qty === 0 ? "zero" : x.qty <= 2 ? "low" : "";
+    let alt = "";
+    if (x.qty <= 2) alt = x.compat && x.compat.length ? `<div class="alt"><b>대체 가능</b> ${x.compat.map((c) => `${esc(c.n)} ${esc(c.sp)} · <b>${c.qty}개</b>`).join("<br>")}</div>` : (x.qty === 0 ? '<div class="alt" style="background:#fde7e5;color:var(--bad)">대체 부품 없음 · 구매 필요</div>' : "");
+    return `<div class="item"><div class="top"><div><b>${esc(x.n)}</b><div class="sub2">${esc(x.sp)} · 위치 ${esc(x.loc || "-")}</div></div><span class="qty ${cc}">${x.qty}개</span></div>${alt}</div>`;
+  }).join("") || '<div class="empty">찾는 부품이 없어요</div>';
+}
+$("#stockQ").addEventListener("input", (e) => { stockState.q = e.target.value; renderStock(); });
+$("#stockF").addEventListener("click", (e) => { const b = e.target.closest("[data-f]"); if (b) { stockState.f = b.dataset.f; renderStock(); } });
+
+/* ---------- 현황(사고 · 장기 미수선 · 교체 이력) ---------- */
+const accState = { f: "all" };
+const accHtml = (a) => { const dt = itemDate(a); return `<div class="item"><div class="top"><b>${esc(a.place)}</b><span class="when">${dLabel(dt)}</span></div><div class="sub2"><span class="pill">${esc(a.kind || "")}</span><span class="pill ${a.done ? "ok" : "bad"}">${a.done ? "처리 완료" : "처리 중"}</span>${esc(a.what)}</div>${a.note ? `<div class="sub2">${esc(a.note)}</div>` : ""}</div>`; };
+async function renderStat() {
+  [...$("#statSeg").children].forEach((b) => b.classList.toggle("on", b.dataset.s === statSeg));
+  $("#sAcc").hidden = statSeg !== "acc"; $("#sLong").hidden = statSeg !== "long"; $("#sHist").hidden = statSeg !== "hist";
+  if (statSeg === "hist") return renderHist();
+  const d = await loadData("sample").catch(() => ({}));
+  if (statSeg === "acc") {
+    $("#accF").innerHTML = chipsHtml([["all", "전체"], ["open", "처리 중"], ["done", "처리 완료"]], accState.f);
+    const arr = (d.acc || []).filter((a) => accState.f === "all" || (accState.f === "done" ? a.done : !a.done)).sort((a, b) => itemDate(b) - itemDate(a));
+    $("#accList").innerHTML = arr.map(accHtml).join("") || '<div class="empty">기록이 없어요</div>';
+  } else {
+    const t = today0().getTime();
+    const arr = (d.longrepair || []).map((x) => ({ ...x, days: Math.round((t - itemDate(x).getTime()) / 864e5) })).sort((a, b) => b.days - a.days);
+    $("#longList").innerHTML = arr.map((x) => `<div class="item"><div class="top"><b>${esc(x.place)} · ${esc(x.item)}</b><span class="pill ${x.days >= 30 ? "bad" : "warn"}">${x.days}일째</span></div><div class="sub2">${esc(x.why || "")} · ${dLabel(itemDate(x))}부터</div></div>`).join("") || '<div class="empty">장기 미수선이 없어요</div>';
+  }
+}
+$("#statSeg").addEventListener("click", (e) => { const b = e.target.closest("[data-s]"); if (b) { statSeg = b.dataset.s; renderStat(); } });
+$("#accF").addEventListener("click", (e) => { const b = e.target.closest("[data-f]"); if (b) { accState.f = b.dataset.f; renderStat(); } });
 
 /* ---------- 시작 ---------- */
 async function init() {

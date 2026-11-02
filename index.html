@@ -154,6 +154,46 @@ body{padding-bottom:calc(140px + env(safe-area-inset-bottom))}
 .pc small{display:block;font-size:10px;font-weight:700;color:var(--muted);line-height:1}
 .pc .ic{width:16px;height:16px;color:var(--cc,var(--l0));flex:none}
 .empty1{padding:10px;text-align:center;color:var(--muted);font-size:12px}
+
+.tabs button{font-size:11px}
+.chips{display:flex;gap:6px;overflow-x:auto;margin:0 0 10px;padding-bottom:2px}
+.chips button{flex:none;height:34px;padding:0 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:600 13px var(--font);cursor:pointer}
+.chips button.on{background:var(--ink);color:var(--card);border-color:var(--ink)}
+.segbar{position:sticky;top:calc(58px + env(safe-area-inset-top));z-index:12;background:var(--bg);padding:2px 0 8px}
+.segbar .hseg{margin:0}
+#pgStat .histhead{position:static}
+#pgStock input,#pgPlan .hseg{margin-bottom:8px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 12px}
+.tile2{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:10px;text-align:left;font:inherit;color:var(--ink);cursor:pointer}
+.tile2 b{display:block;font-size:26px;line-height:1.1}
+.tile2 small{color:var(--muted);font-size:12px}
+.tile2.warn2{border-color:var(--bad)} .tile2.warn2 b{color:var(--bad)}
+.item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin:0 0 8px}
+.item .top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.item b{font-size:16px}
+.item .when{color:var(--muted);font-size:13px;white-space:nowrap}
+.item .sub2{color:var(--muted);font-size:13px;margin-top:3px}
+.item .qty{font-size:22px;font-weight:800}
+.item .qty.zero{color:var(--bad)} .item .qty.low{color:#b26a00}
+.alt{margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--accent-soft);font-size:13px}
+.dayh{font:700 13px var(--font);color:var(--muted);margin:12px 2px 6px}
+.dayh.today{color:var(--ink)}
+.pill.warn{background:#ffe9cc;color:#9a5a00}
+.planbar{display:flex;align-items:center;gap:8px;margin:0 0 10px}
+.planbar .btn{flex:1;height:40px;font-size:13px}
+.stn b{font-weight:800}.stn i{font-style:normal;color:var(--muted)}
+.cat{display:inline-block;border-radius:6px;padding:1px 7px;font:700 12px var(--font);margin-right:6px;color:#fff}
+.cat.c1{background:var(--l0)}.cat.c2{background:var(--accent);color:var(--accent-ink)}.cat.c3{background:var(--bad)}
+.lt{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:var(--l0)}.lt.l1{background:var(--l1)}.lt.l2{background:var(--l2)}
+.pc small.rk{display:inline;line-height:inherit}
+.rk{font-size:11px;font-weight:600;color:var(--muted);margin-left:5px}
+.nums{display:flex;flex-direction:column;gap:1px;font-size:11px;padding:4px 8px;background:var(--card);border-left:1px solid var(--line);border-right:1px solid var(--line);color:var(--muted)}
+.nums a{color:var(--ink);font-weight:700;text-decoration:none}
+.dpick{width:100%;border:0;border-top:1px solid var(--line);background:var(--card);font-family:var(--font);cursor:pointer;text-align:left}
+.dpick em{font-style:normal;font-size:11px;font-weight:700;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 7px}
+.dpick.on{background:var(--accent-soft)} .dpick.on em{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.dmode{display:block;margin:4px auto 0}
+.pc span{min-width:0}
 </style>
 </head>
 <body>
@@ -163,7 +203,8 @@ body{padding-bottom:calc(140px + env(safe-area-inset-bottom))}
 </header>
 <main>
   <section class="page" id="pgHome">
-    <div class="demo">샘플 화면 · 아래 이름·번호는 연습용 가짜 데이터예요</div>
+    <div class="demo">근무·사고·재고·미수선 칸은 연습용 가짜 데이터예요</div>
+    <div class="tiles" id="hTiles"></div>
     <div class="card" id="hWork"></div>
     <div class="card" id="hPlan"></div>
     <div class="card" id="hAcc"></div>
@@ -176,16 +217,43 @@ body{padding-bottom:calc(140px + env(safe-area-inset-bottom))}
     <p class="note" id="foot"></p>
   </section>
 
-  <section class="page" id="pgHist" hidden>
-    <div class="histhead">
-      <div class="hseg" id="histPeriod">
-        <button data-p="today">오늘</button><button data-p="week">이번주</button><button class="on" data-p="month">이번달</button><button data-p="all">전체</button>
-      </div>
-      <input type="text" id="histQ" placeholder="역·호기·부품 검색 (예: 이곡, ES3)" autocomplete="off" enterkeyhint="search">
+  <section class="page" id="pgPlan" hidden>
+    <div class="demo" id="planDemo">샘플 화면 · 가짜 일정이에요</div>
+    <div class="planbar"><label class="btn">월간점검표 파일 불러오기<input type="file" accept=".xlsx,.xlsm,.json,application/json" id="planFile"></label><button class="link" id="planClear" hidden>불러온 일정 지우기</button></div>
+    <div class="hseg" id="planPeriod"><button data-p="today" class="on">오늘</button><button data-p="week">이번주</button><button data-p="month">이번달</button></div>
+    <div class="chips" id="planKind"></div>
+    <div id="planList"></div>
+  </section>
+
+  <section class="page" id="pgStock" hidden>
+    <div class="demo">샘플 화면 · 가짜 재고예요</div>
+    <input type="text" id="stockQ" placeholder="부품 검색 (예: ㄱㅇㄷㄹㄹ, 롤러)" autocomplete="off" enterkeyhint="search">
+    <div class="chips" id="stockF"><button data-f="all" class="on">전체</button><button data-f="zero">없는 것</button><button data-f="low">부족(2개 이하)</button></div>
+    <div id="stockList"></div>
+  </section>
+
+  <section class="page" id="pgStat" hidden>
+    <div class="segbar"><div class="hseg" id="statSeg"><button data-s="acc" class="on">사고</button><button data-s="long">장기 미수선</button><button data-s="hist">교체 이력</button></div></div>
+    <div id="sAcc">
+      <div class="demo">샘플 화면 · 가짜 사고 기록이에요</div>
+      <div class="chips" id="accF"><button data-f="all" class="on">전체</button><button data-f="open">처리 중</button><button data-f="done">처리 완료</button></div>
+      <div id="accList"></div>
     </div>
-    <p class="note">지금은 이 폰에서 만든 사진대지 기록만 모아 보여줘요. 여러 사람이 함께 보는 집계는 서버 연결 뒤에 돼요.</p>
-    <div id="histSum"></div>
-    <div id="histList"></div>
+    <div id="sLong" hidden>
+      <div class="demo">샘플 화면 · 가짜 미수선 목록이에요</div>
+      <div id="longList"></div>
+    </div>
+    <div id="sHist" hidden>
+      <div class="histhead">
+        <div class="hseg" id="histPeriod">
+          <button data-p="today">오늘</button><button data-p="week">이번주</button><button class="on" data-p="month">이번달</button><button data-p="all">전체</button>
+        </div>
+        <input type="text" id="histQ" placeholder="역·호기·부품 검색 (예: 이곡, ES3)" autocomplete="off" enterkeyhint="search">
+      </div>
+      <p class="note">지금은 이 폰에서 만든 사진대지 기록만 모아 보여줘요. 여러 사람이 함께 보는 집계는 서버 연결 뒤에 돼요.</p>
+      <div id="histSum"></div>
+      <div id="histList"></div>
+    </div>
   </section>
 </main>
 <div class="bar" id="actBar" hidden>
@@ -194,8 +262,10 @@ body{padding-bottom:calc(140px + env(safe-area-inset-bottom))}
 </div>
 <nav class="tabs" id="tabs" aria-label="메뉴">
   <button data-t="home" class="on"><svg class="ic" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg><span>홈</span></button>
+  <button data-t="plan"><svg class="ic" viewBox="0 0 24 24"><path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"/></svg><span>일정</span></button>
+  <button data-t="stock"><svg class="ic" viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8"/></svg><span>재고</span></button>
+  <button data-t="stat"><svg class="ic" viewBox="0 0 24 24"><path d="M5 20V10M12 20V4M19 20v-7"/></svg><span>현황</span></button>
   <button data-t="photo"><svg class="ic" viewBox="0 0 24 24"><path d="M4 7h4l2-3h4l2 3h4v13H4zM12 17a4 4 0 100-8 4 4 0 000 8z"/></svg><span>사진대지</span></button>
-  <button data-t="hist"><svg class="ic" viewBox="0 0 24 24"><path d="M5 20V10M12 20V4M19 20v-7"/></svg><span>이력</span></button>
 </nav>
 
 <div class="sheet-back" id="adjBack" hidden>
