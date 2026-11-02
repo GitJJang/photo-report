@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.6.1";
+const APP_VERSION = "1.7.0";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -694,7 +694,7 @@ async function renderHome() {
   if (!d) { $("#hWork").innerHTML = '<div class="empty">데이터를 불러오지 못했어요</div>'; return; }
   const t0 = today0().getTime();
   const todays = pl.items.filter((it) => itemDate(it).getTime() === t0).sort((a, b) => CATS.indexOf(a.cat) - CATS.indexOf(b.cat));
-  const openAcc = (d.acc || []).filter((a) => !a.done).length, lng = (d.longrepair || []).length;
+  const accAll = await getAccAll(), openAcc = accAll.list.filter((a) => !a.done).length, lng = (d.longrepair || []).length;
   $("#hTiles").innerHTML =
     `<button class="tile2" data-go="plan"><b>${todays.length}</b><small>오늘 작업</small></button>` +
     `<button class="tile2${openAcc ? " warn2" : ""}" data-go="stat" data-seg="acc"><b>${openAcc}</b><small>처리 중 사고</small></button>` +
@@ -721,7 +721,7 @@ async function renderHome() {
     `</div></div><div class="grp"><h3>승강업체 비상연락망${ct.demo ? "" : ""}</h3><div class="cols c2">` + ["1호선", "2호선"].map(venCol).join("") +
     `</div><div class="planbar" style="margin-top:8px"><label class="btn">비상연락망 불러오기(엑셀)<input type="file" accept=".xlsx,.xlsm,.json,application/json" id="ctFile"></label>${ct.demo ? "" : '<button class="link" id="ctClear">지우기</button>'}</div>${ct.demo ? "" : `<div class="planbar"><label class="btn">업체 근무표 불러오기(엑셀)<input type="file" accept=".xlsx,.xlsm" id="rsFile"></label>${duty.has ? '<small class="note">오늘 근무 반영됨</small>' : '<small class="note">오늘 근무표 없음</small>'}</div>`}</div>`;
   $("#hPlan").innerHTML = `<div class="sec"><h2>오늘 작업 · ${dLabel(new Date())}</h2></div>` + (todays.map(itemHtml).join("") || '<div class="empty">오늘 작업이 없어요</div>');
-  $("#hAcc").innerHTML = '<div class="sec"><h2>최근 사고</h2></div>' + (d.acc || []).slice(0, 3).map(accHtml).join("");
+  $("#hAcc").innerHTML = '<div class="sec"><h2>최근 사고</h2></div>' + accAll.list.slice().sort((a, b) => itemDate(b) - itemDate(a)).slice(0, 3).map(accHtml).join("");
 }
 
 /* 업체 근무표(엑셀) → 날짜별 당직·휴무. 이름 칸이면 '당/휴' 같은 표시를, 주간/당직 칸이면 적힌 이름을 읽음 */
@@ -931,16 +931,116 @@ $("#stockQ").addEventListener("input", (e) => { stockState.q = e.target.value; r
 $("#stockF").addEventListener("click", (e) => { const b = e.target.closest("[data-f]"); if (b) { stockState.f = b.dataset.f; renderStock(); } });
 
 /* ---------- 현황(사고 · 장기 미수선 · 교체 이력) ---------- */
-const accState = { f: "all" };
-const accHtml = (a) => { const dt = itemDate(a); return `<div class="item"><div class="top"><b>${esc(a.place)}</b><span class="when">${dLabel(dt)}</span></div><div class="sub2"><span class="pill">${esc(a.kind || "")}</span><span class="pill ${a.done ? "ok" : "bad"}">${a.done ? "처리 완료" : "처리 중"}</span>${esc(a.what)}</div>${a.note ? `<div class="sub2">${esc(a.note)}</div>` : ""}</div>`; };
+const accState = { f: "all", q: "" };
+async function getAccAll() {
+  let saved = []; try { saved = (await idbGet("acc")) || []; } catch (e) {}
+  if (saved.length) return { list: saved, demo: false };
+  const d = await loadData("sample").catch(() => ({}));
+  return { list: (d.acc || []).map((a, i) => ({ ...a, sid: "s" + i, station: a.place, kind: "", unit: "", type: a.kind, action: a.note, note: "" })), demo: true };
+}
+const accPlace = (a) => [a.station, a.unit ? (a.kind || "") + a.unit : ""].filter(Boolean).join(" ");
+const toMin = (t) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
+function accTimes(a) {
+  const r = toMin(a.tRecv), ar = toMin(a.tArr), d = toMin(a.tDone); if (r === null && ar === null && d === null) return "";
+  const df = (x, y) => (x !== null && y !== null && y >= x ? y - x : null);
+  const go = df(r, ar), tot = df(r, d), fix = df(ar, d);
+  const parts = [a.tRecv && "접수 " + a.tRecv, a.tArr && "도착 " + a.tArr, a.tDone && "완료 " + a.tDone].filter(Boolean).join(" · ");
+  const st = [go !== null && "출동 " + go + "분", fix !== null && "조치 " + fix + "분", tot !== null && "총 " + tot + "분"].filter(Boolean).join(" / ");
+  return `<div class="sub2">${parts}${st ? ` <b>(${st})</b>` : ""}${a.nonrun && a.nonrun !== "없음" ? ` · 비운행 ${esc(a.nonrun)}` : ""}</div>`;
+}
+const nl = (t) => esc(t).replace(/\n/g, "<br>");
+const accHtml = (a) => `<div class="item acc"${a.id ? ` data-id="${a.id}"` : ""}><div class="top"><b>${esc(accPlace(a) || "(역 미입력)")}</b><span class="when">${dLabel(itemDate(a))}</span></div><div class="sub2"><span class="pill">${esc(a.type || "")}</span><span class="pill ${a.done ? "ok" : "bad"}">${a.done ? "처리 완료" : "처리 중"}</span>${esc(a.what || "")}</div>${a.action ? `<div class="sub2">▸ ${nl(a.action)}</div>` : ""}${accTimes(a)}${a.note ? `<div class="sub2">※ ${nl(a.note)}</div>` : ""}</div>`;
+
+/* 사고·고장 조치 입력 (카톡 보고 양식 그대로) */
+let accForm = { id: null, kind: "EL", type: "고장", non: "없음", done: 1 };
+const A = (id) => $("#" + id);
+function accFillUnits() { A("aUnit").innerHTML = '<option value="">호기</option>' + Array.from({ length: 40 }, (_, i) => `<option>${i + 1}</option>`).join(""); }
+function accFillStations(line, sel) {
+  const l = DATA.lines.find((x) => x.name === line) || DATA.lines[0];
+  A("aStn").innerHTML = '<option value="">역 선택</option>' + l.stations.map((x) => `<option${x === sel ? " selected" : ""}>${esc(x)}</option>`).join("") + '<option value="__c">기타(직접 입력)</option>';
+}
+const segSet = (id, v) => [...A(id).children].forEach((b) => b.classList.toggle("on", b.dataset.v === String(v)));
+function accFill(r) {
+  accForm = { id: r.id || null, kind: r.kind || "EL", type: r.type || "고장", non: !r.nonrun || r.nonrun === "없음" ? "없음" : "있음", done: r.done === false || r.done === 0 ? 0 : 1 };
+  const ln = r.line || ((DATA.lines.find((l) => l.stations.includes(r.station)) || {}).name) || "1호선";
+  A("aDate").value = r.date || todayKey(); A("aLine").value = ln;
+  const inList = DATA.lines.find((l) => l.name === ln).stations.includes(r.station);
+  accFillStations(ln, inList ? r.station : (r.station ? "__c" : ""));
+  A("aStnC").hidden = inList || !r.station; A("aStnC").value = inList ? "" : (r.station || "");
+  A("aUnit").value = r.unit || ""; segSet("aKind", accForm.kind); segSet("aType", accForm.type); segSet("aNon", accForm.non); segSet("aDone", accForm.done);
+  A("aNonT").hidden = accForm.non !== "있음"; A("aNonT").value = accForm.non === "있음" ? r.nonrun || "" : "";
+  A("aWhat").value = r.what || ""; A("aAct").value = r.action || ""; A("aNote").value = r.note || "";
+  A("aRecv").value = r.tRecv || ""; A("aArr").value = r.tArr || ""; A("aDoneT").value = r.tDone || "";
+  A("aDel").hidden = !r.id; A("accTitle").textContent = r.id ? "사고·고장 조치 수정" : "사고·고장 조치 입력";
+}
+function accRead() {
+  const stn = A("aStn").value === "__c" ? A("aStnC").value.trim() : A("aStn").value;
+  return { id: accForm.id || Date.now(), date: A("aDate").value || todayKey(), line: A("aLine").value, station: stn, kind: accForm.kind, unit: A("aUnit").value, type: accForm.type,
+    what: A("aWhat").value.trim(), action: A("aAct").value.trim(), nonrun: accForm.non === "있음" ? (A("aNonT").value.trim() || "있음") : "없음",
+    tRecv: A("aRecv").value, tArr: A("aArr").value, tDone: A("aDoneT").value, note: A("aNote").value.trim(), done: !!accForm.done };
+}
+function accText(r) {
+  return [accPlace(r), r.what, r.action, r.nonrun ? (r.nonrun === "없음" ? "(비운행 없음)" : "(비운행 " + r.nonrun + ")") : "", r.tRecv && "접수 " + r.tRecv, r.tArr && "도착 " + r.tArr, r.tDone && "완료 " + r.tDone, r.note ? "\n" + r.note : ""].filter((x) => x !== "" && x !== undefined && x !== false && x !== null).join("\n");
+}
+function parseKakao(raw) {
+  const HDR = /^([가-힣A-Za-z·]{1,10}(?:\s[가-힣]{1,6})?)\s*(EL|ES|엘|에스)\s*0?(\d{1,2})\s*(?:호기)?$/i;
+  const blocks = []; let cur = null;
+  raw.replace(/\r/g, "").split("\n").map((x) => x.trim()).forEach((l) => { const m = HDR.exec(l); if (m) { cur = { station: m[1].trim(), kind: /^(el|엘)$/i.test(m[2]) ? "EL" : "ES", unit: String(+m[3]), lines: [] }; blocks.push(cur); } else if (cur) cur.lines.push(l); });
+  return blocks.map((b) => {
+    const r = { station: b.station, kind: b.kind, unit: b.unit, nonrun: "", tRecv: "", tArr: "", tDone: "" }, segs = []; let seg = [];
+    const flush = () => { if (seg.length) segs.push(seg); seg = []; };
+    b.lines.forEach((l) => {
+      const tm = /^(접수|도착|완료)\s*:?\s*(\d{1,2})\s*(?::|시)\s*(\d{1,2})?/.exec(l);
+      if (tm) { flush(); const v = pad(+tm[2]) + ":" + pad(+(tm[3] || 0)); if (tm[1] === "접수") r.tRecv = v; else if (tm[1] === "도착") r.tArr = v; else r.tDone = v; return; }
+      if (!l) { flush(); return; }
+      const nm = /\(?\s*비운행[^()\n]*\)?/.exec(l);
+      if (nm) { const inner = nm[0].replace(/[()]|비운행|시간/g, "").trim(); r.nonrun = !inner || /없음/.test(inner) ? "없음" : inner; l = l.replace(nm[0], "").trim(); if (!l) return; }
+      seg.push(l);
+    });
+    flush();
+    const main = segs[0] || [];
+    r.what = main[0] || ""; r.action = main.slice(1).join("\n"); r.note = segs.slice(1).map((x) => x.join("\n")).join("\n");
+    const all = [r.what, r.action, r.note].join(" ");
+    r.type = /전도/.test(all) ? "전도" : /갇힘|갇혔/.test(all) ? "갇힘" : /정지/.test(all) ? "정지" : "고장";
+    r.done = !!r.tDone; r.nonrun = r.nonrun || "없음";
+    const ln = DATA.lines.find((l) => l.stations.includes(r.station)); r.line = ln ? ln.name : "";
+    return r;
+  });
+}
+async function accSaveRec(r) { const all = (await idbGet("acc").catch(() => null)) || []; const i = all.findIndex((x) => x.id === r.id); if (i >= 0) all[i] = r; else all.push(r); await idbSet("acc", all); }
+function openAcc(r) { accFillUnits(); accFill(r || { date: todayKey(), line: "1호선", kind: "EL", type: "고장", done: 1 }); A("accPaste").value = ""; A("accBack").hidden = false; }
+$("#accNew").onclick = () => openAcc(null);
+$("#aClose").onclick = () => (A("accBack").hidden = true);
+A("accBack").addEventListener("click", (e) => { if (e.target.id === "accBack") A("aClose").click(); });
+A("aLine").onchange = () => { accFillStations(A("aLine").value, ""); A("aStnC").hidden = true; };
+A("aStn").onchange = () => { A("aStnC").hidden = A("aStn").value !== "__c"; if (!A("aStnC").hidden) A("aStnC").focus(); };
+[["aKind", "kind"], ["aType", "type"], ["aNon", "non"], ["aDone", "done"]].forEach(([id, k]) => A(id).addEventListener("click", (e) => { const b = e.target.closest("[data-v]"); if (!b) return; accForm[k] = k === "done" ? +b.dataset.v : b.dataset.v; segSet(id, b.dataset.v); if (k === "non") A("aNonT").hidden = accForm.non !== "있음"; }));
+A("aParse").onclick = async () => {
+  const bl = parseKakao(A("accPaste").value); if (!bl.length) return toast("카톡 글 첫 줄이 '역 EL4' 모양이어야 해요 (예: 중앙 EL4)", 5000);
+  if (bl.length === 1) { accFill({ ...bl[0], date: A("aDate").value || todayKey() }); toast("채웠어요. 확인하고 저장하세요"); return; }
+  if (!confirm(`${bl.length}건이 붙어 있어요. 모두 저장할까요?\n(${bl.map((b) => b.station + b.kind + b.unit).join(", ")})`)) return;
+  const date = A("aDate").value || todayKey(); let i = 0;
+  for (const b of bl) await accSaveRec({ ...b, id: Date.now() + i++, date });
+  A("accBack").hidden = true; toast(bl.length + "건 저장했어요"); renderStat();
+};
+A("aSave").onclick = async () => { const r = accRead(); if (!r.station && !r.what) return toast("역 또는 내용을 입력하세요"); await accSaveRec(r); A("accBack").hidden = true; toast("저장했어요"); renderStat(); };
+A("aCopy").onclick = async () => { try { await navigator.clipboard.writeText(accText(accRead())); toast("복사했어요. 단톡방에 붙여넣으세요"); } catch (e) { toast("복사하지 못했어요"); } };
+A("aDel").onclick = async () => { if (!confirm("이 기록을 지울까요?")) return; const all = ((await idbGet("acc").catch(() => null)) || []).filter((x) => x.id !== accForm.id); await idbSet("acc", all); A("accBack").hidden = true; renderStat(); };
+$("#accList").addEventListener("click", async (e) => { const it = e.target.closest("[data-id]"); if (!it) return; const all = (await idbGet("acc").catch(() => null)) || []; const r = all.find((x) => x.id === +it.dataset.id); if (r) openAcc(r); });
+$("#accQ").addEventListener("input", (e) => { accState.q = e.target.value; renderStat(); });
 async function renderStat() {
   [...$("#statSeg").children].forEach((b) => b.classList.toggle("on", b.dataset.s === statSeg));
   $("#sAcc").hidden = statSeg !== "acc"; $("#sLong").hidden = statSeg !== "long"; $("#sHist").hidden = statSeg !== "hist";
   if (statSeg === "hist") return renderHist();
   const d = await loadData("sample").catch(() => ({}));
   if (statSeg === "acc") {
+    const { list, demo } = await getAccAll(); $("#accDemo").hidden = !demo;
     $("#accF").innerHTML = chipsHtml([["all", "전체"], ["open", "처리 중"], ["done", "처리 완료"]], accState.f);
-    const arr = (d.acc || []).filter((a) => accState.f === "all" || (accState.f === "done" ? a.done : !a.done)).sort((a, b) => itemDate(b) - itemDate(a));
+    const q = accState.q.toLowerCase().replace(/\s/g, "");
+    const arr = list.filter((a) => accState.f === "all" || (accState.f === "done" ? a.done : !a.done))
+      .filter((a) => !q || hasText([accPlace(a), a.type, a.what, a.action, a.note, a.nonrun].join(" ").toLowerCase().replace(/\s/g, ""), q))
+      .sort((a, b) => itemDate(b) - itemDate(a) || (b.id || 0) - (a.id || 0));
+    $("#accCnt").textContent = q ? `검색 결과 ${arr.length}건` : `${arr.length}건`;
     $("#accList").innerHTML = arr.map(accHtml).join("") || '<div class="empty">기록이 없어요</div>';
   } else {
     const t = today0().getTime();

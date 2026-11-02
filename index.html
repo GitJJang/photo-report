@@ -32,7 +32,7 @@ main{max-width:720px;margin:0 auto;padding:12px 16px}
 .card h2{font-size:15px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
 .card h2 .sum{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;color:var(--muted);font-size:13px}
 label.f{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
-input[type=text],input[type=date],select{width:100%;height:46px;font:inherit;font-size:16px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:0 10px}
+input[type=text],input[type=date],input[type=time],select{width:100%;height:46px;font:inherit;font-size:16px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:0 10px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .seg button{flex:1;height:44px;border:0;background:var(--card);color:var(--ink);font:600 15px var(--font);cursor:pointer}
@@ -196,6 +196,11 @@ body{padding-bottom:calc(140px + env(safe-area-inset-bottom))}
 .pc span{min-width:0}
 .sub.off{color:var(--muted);background:var(--bg)}
 .offlist{opacity:.5}
+textarea{width:100%;font:inherit;font-size:16px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;resize:vertical}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.grid3 input{padding:0 4px;font-size:15px}
+.item.acc[data-id]{cursor:pointer}
+#accQ{margin:0}
 </style>
 </head>
 <body>
@@ -237,7 +242,10 @@ body{padding-bottom:calc(140px + env(safe-area-inset-bottom))}
   <section class="page" id="pgStat" hidden>
     <div class="segbar"><div class="hseg" id="statSeg"><button data-s="acc" class="on">사고</button><button data-s="long">장기 미수선</button><button data-s="hist">교체 이력</button></div></div>
     <div id="sAcc">
-      <div class="demo">샘플 화면 · 가짜 사고 기록이에요</div>
+      <div class="demo" id="accDemo">샘플 화면 · 가짜 사고 기록이에요 (저장하면 사라지고 내 기록만 보여요)</div>
+      <button class="btn primary" id="accNew" style="width:100%;height:50px;margin-bottom:10px">＋ 사고·고장 조치 입력</button>
+      <input type="text" id="accQ" placeholder="단어로 찾기 (예: 도어, 전도, 이곡, 소음)" autocomplete="off" enterkeyhint="search">
+      <div class="note" id="accCnt" style="margin:6px 2px"></div>
       <div class="chips" id="accF"><button data-f="all" class="on">전체</button><button data-f="open">처리 중</button><button data-f="done">처리 완료</button></div>
       <div id="accList"></div>
     </div>
@@ -313,6 +321,38 @@ body{padding-bottom:calc(140px + env(safe-area-inset-bottom))}
     <div id="partList"></div>
     <button class="btn primary" id="partUse" hidden></button>
     <button class="btn" id="partClose">닫기</button>
+  </div>
+</div>
+
+
+<div class="sheet-back" id="accBack" hidden>
+  <div class="sheet">
+    <h3 id="accTitle">사고·고장 조치 입력</h3>
+    <details class="dtl"><summary>카톡 글 붙여넣어서 채우기</summary>
+      <textarea id="accPaste" rows="6" placeholder="단톡방 보고 글을 그대로 붙여넣으세요. 여러 건이 붙어 있으면 한꺼번에 저장해요."></textarea>
+      <button class="btn" id="aParse">붙여넣은 글로 채우기</button>
+    </details>
+    <label class="f">날짜</label><input type="date" id="aDate">
+    <label class="f">역 · 호기</label>
+    <div class="grid2"><select id="aLine"><option>1호선</option><option>2호선</option></select><select id="aStn"></select></div>
+    <input type="text" id="aStnC" placeholder="역 이름 직접 입력" hidden style="margin-top:8px">
+    <div class="grid2" style="margin-top:8px"><div class="seg" id="aKind"><button data-v="EL" class="on">EL</button><button data-v="ES">ES</button></div><select id="aUnit"></select></div>
+    <label class="f">종류</label>
+    <div class="seg" id="aType"><button data-v="고장" class="on">고장</button><button data-v="전도">전도</button><button data-v="갇힘">갇힘</button><button data-v="정지">정지</button></div>
+    <label class="f">현상 (무슨 일이었나)</label><textarea id="aWhat" rows="2" placeholder="예: 승장도어씰 이물질로 인한 도어닫힘불량"></textarea>
+    <label class="f">점검·조치 내용</label><textarea id="aAct" rows="3" placeholder="예: 이물질 제거 및 운행상태 점검 후 가동"></textarea>
+    <label class="f">비운행</label>
+    <div class="seg" id="aNon"><button data-v="없음" class="on">없음</button><button data-v="있음">있음</button></div>
+    <input type="text" id="aNonT" placeholder="비운행 시간 (예: 30분)" hidden style="margin-top:8px">
+    <label class="f">접수 · 도착 · 완료 시간</label>
+    <div class="grid3"><input type="time" id="aRecv"><input type="time" id="aArr"><input type="time" id="aDoneT"></div>
+    <label class="f">비고 (CCTV 확인 결과, 자재 수급 지연 등)</label><textarea id="aNote" rows="2"></textarea>
+    <label class="f">처리 상태</label>
+    <div class="seg" id="aDone"><button data-v="1" class="on">처리 완료</button><button data-v="0">처리 중</button></div>
+    <button class="btn primary" id="aSave">저장</button>
+    <button class="btn" id="aCopy">카톡용 문구 복사</button>
+    <button class="btn danger" id="aDel" hidden>삭제</button>
+    <button class="btn" id="aClose">닫기</button>
   </div>
 </div>
 
