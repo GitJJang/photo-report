@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.7.1";
+const APP_VERSION = "1.7.2";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -974,11 +974,32 @@ function accFill(r) {
   A("aRecv").value = r.tRecv || ""; A("aArr").value = r.tArr || ""; A("aDoneT").value = r.tDone || "";
   A("aDel").hidden = !r.id; A("accTitle").textContent = r.id ? "사고·고장 조치 수정" : "사고·고장 조치 입력";
 }
+
+/* 시간 입력: 숫자만 치면 10:59 모양으로 맞춤 */
+function normT(v) {
+  const d = String(v || "").replace(/\D/g, ""); if (!d) return "";
+  let h, m;
+  if (d.length <= 2) { h = +d; m = 0; } else if (d.length === 3) { h = +d[0]; m = +d.slice(1); } else { h = +d.slice(0, 2); m = +d.slice(2, 4); }
+  return h > 23 || m > 59 ? "" : pad(h) + ":" + pad(m);
+}
+const tNow = () => { const d = new Date(); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+const tAdd = (t, n) => { const x = toMin(t); if (x === null) return ""; const y = (x + n) % 1440; return pad(Math.floor(y / 60)) + ":" + pad(y % 60); };
+["aRecv", "aArr", "aDoneT"].forEach((id) => {
+  const el = $("#" + id);
+  el.addEventListener("input", () => { const d = el.value.replace(/\D/g, ""); if (d.length >= 4) el.value = normT(d.slice(0, 4)) || el.value; });
+  el.addEventListener("blur", () => { const n = normT(el.value); el.value = n; if (!n && el.value === "") return; });
+});
+$("#accBack").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-now],[data-add]"); if (!b) return;
+  if (b.dataset.now) { $("#" + b.dataset.now).value = tNow(); return; }
+  const base = normT($("#" + b.dataset.from).value); if (!base) return toast("앞 시간을 먼저 넣어 주세요");
+  $("#" + b.dataset.add).value = tAdd(base, +b.dataset.n);
+});
 function accRead() {
   const stn = A("aStn").value === "__c" ? A("aStnC").value.trim() : A("aStn").value;
   return { id: accForm.id || Date.now(), date: A("aDate").value || todayKey(), line: A("aLine").value, station: stn, kind: accForm.kind, unit: A("aUnit").value, type: accForm.type,
     what: A("aWhat").value.trim(), action: A("aAct").value.trim(), nonrun: accForm.non === "있음" ? (A("aNonT").value.trim() || "있음") : "없음",
-    tRecv: A("aRecv").value, tArr: A("aArr").value, tDone: A("aDoneT").value, note: A("aNote").value.trim(), done: !!accForm.done };
+    tRecv: normT(A("aRecv").value), tArr: normT(A("aArr").value), tDone: normT(A("aDoneT").value), note: A("aNote").value.trim(), done: !!accForm.done };
 }
 function accText(r) {
   return [accPlace(r), r.what, r.action, r.nonrun ? (r.nonrun === "없음" ? "(비운행 없음)" : "(비운행 " + r.nonrun + ")") : "", r.tRecv && "접수 " + r.tRecv, r.tArr && "도착 " + r.tArr, r.tDone && "완료 " + r.tDone, r.note ? "\n" + r.note : ""].filter((x) => x !== "" && x !== undefined && x !== false && x !== null).join("\n");
