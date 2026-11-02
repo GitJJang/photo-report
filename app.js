@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.7.3";
+const APP_VERSION = "2.0.0";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -233,7 +233,7 @@ function renderTray() {
 }
 function renderJobs() {
   const box = $("#jobs");
-  box.innerHTML = S.jobs.length ? S.jobs.map(jobHtml).join("") : `<div class="empty">아래 <b>＋ 새 작업</b>을 눌러 시작하세요.<br>역·호기·부품을 고르고 교체 전/후 사진을 넣으면 사진대지가 만들어져요.</div>`;
+  box.innerHTML = S.jobs.length ? S.jobs.map(jobHtml).join("") : `<div class="panel"><div class="empty">${IC.photo}<b style="color:var(--ink)">아직 작업이 없어요</b><br>아래 <b>＋ 새 작업</b>을 누르고 역·호기·부품을 고른 뒤<br>교체 전·후 사진을 넣으면 사진대지가 만들어져요.</div></div>`;
   S.jobs.forEach((j) => updateCard($(`.card[data-id="${j.id}"]`), j));
   $("#cnt").textContent = S.jobs.length ? `${S.jobs.length}건` : "";
   const ready = S.jobs.filter(jobOk).length; $("#make").textContent = ready ? `사진대지 만들기 (${ready}건)` : "사진대지 만들기";
@@ -589,7 +589,7 @@ $("#histQ").addEventListener("input", (e) => { histState.q = e.target.value; ren
 
 /* ---------- 탭 ---------- */
 const TABS = ["home", "plan", "stock", "stat", "photo"];
-const TITLES = { home: "승강업무", plan: "일정", stock: "창고 재고", stat: "현황", photo: "사진대지" };
+const TITLES = { home: "승강업무 통합", plan: "일정", stock: "창고 재고", stat: "현황", photo: "사진대지" };
 const pgOf = (k) => $("#pg" + k[0].toUpperCase() + k.slice(1));
 let curTab = "home", statSeg = "acc";
 function showTab(t) {
@@ -597,7 +597,10 @@ function showTab(t) {
   TABS.forEach((k) => { pgOf(k).hidden = k !== t; });
   [...$("#tabs").children].forEach((b) => b.classList.toggle("on", b.dataset.t === t));
   $("#ttl").textContent = TITLES[t]; $("#actBar").hidden = t !== "photo"; $("#cnt").hidden = t !== "photo";
-  if (t === "photo") renderJobs();
+  document.body.classList.toggle("has-bar", t === "photo");
+  const nd = new Date();
+  $("#subt").textContent = { home: `${nd.getMonth() + 1}월 ${nd.getDate()}일 ${"일월화수목금토"[nd.getDay()]}요일 · 대구교통공사 승강`, plan: "월간 점검·검사·중보수", stock: "창고 실재고 · 대체 부품", stat: "사고·고장 · 장기 미수선 · 교체 이력", photo: "교체 전·후 사진으로 사진대지 만들기" }[t] || "";
+  if (t === "photo") { renderJobs(); renderPhotoRecent(); }
   if (t === "home") renderHome();
   if (t === "plan") renderPlan();
   if (t === "stock") renderStock();
@@ -612,7 +615,7 @@ const dataCache = {};
 async function loadData(name) { if (dataCache[name]) return dataCache[name]; const r = await fetch("data/" + name + ".json", { cache: "no-cache" }); if (!r.ok) throw new Error(name); return (dataCache[name] = await r.json()); }
 async function getPlan() {
   let st = null; try { st = await idbGet("plan"); } catch (e) {}
-  if (st && st.items && st.items.length) return { items: st.items, demo: false };
+  if (st && st.items && st.items.length) return { items: st.items, demo: false, name: st.name || "" };
   const d = await loadData("sample").catch(() => ({})); return { items: d.plan || [], demo: true };
 }
 const today0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -689,40 +692,84 @@ function parseContacts(grids) {
 
 /* ---------- 홈 ---------- */
 const callIc = '<svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A15 15 0 013 6a2 2 0 012-2z"/></svg>';
+const IC = {
+  chk: '<svg class="ic" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 00-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 005.4-5.4l-2.5 2.5-2.1-.4-.4-2.1z"/></svg>',
+  ins: '<svg class="ic" viewBox="0 0 24 24"><path d="M9 4h6v3H9zM7 5H5v15h14V5h-2M9 13l2 2 4-4"/></svg>',
+  rep: '<svg class="ic" viewBox="0 0 24 24"><path d="M12 9a3 3 0 100 6 3 3 0 000-6zM12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>',
+  alert: '<svg class="ic" viewBox="0 0 24 24"><path d="M12 3l10 18H2zM12 10v4M12 17.5v.5"/></svg>',
+  cal: '<svg class="ic" viewBox="0 0 24 24"><path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"/></svg>',
+  people: '<svg class="ic" viewBox="0 0 24 24"><path d="M9 11a4 4 0 100-8 4 4 0 000 8zM2 21a7 7 0 0114 0M16 3.5a4 4 0 010 7.5M22 21a7 7 0 00-4-6.3"/></svg>',
+  db: '<svg class="ic" viewBox="0 0 24 24"><path d="M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>',
+  photo: '<svg class="ic" viewBox="0 0 24 24"><path d="M4 7h4l2-3h4l2 3h4v13H4zM12 17a4 4 0 100-8 4 4 0 000 8z"/></svg>',
+  search: '<svg class="ic" viewBox="0 0 24 24"><path d="M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4"/></svg>',
+  box: '<svg class="ic" viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8"/></svg>',
+};
+const catIc = { "점검": IC.chk, "검사": IC.ins, "중보수": IC.rep, "수선": IC.rep };
+const planRow = (it) => `<div class="prow2 ${lineCls[it.line] || ""}"><span class="bar4"></span><div class="pm"><div class="pt"><span class="cat ${catCls[it.cat] || "c1"}">${catIc[it.cat] || ""}${esc(it.cat)}</span>${it.line ? `<span>${esc(it.line)} ${esc(it.kind || "")}</span>` : ""}</div><div class="px stn">${stnHtml(it.text)}</div></div></div>`;
+let homeCt = (() => { try { return localStorage.getItem("sdj-ct") || "1호선"; } catch (e) { return "1호선"; } })();
 async function renderHome() {
   const [d, pl] = await Promise.all([loadData("sample").catch(() => null), getPlan()]);
   if (!d) { $("#hWork").innerHTML = '<div class="empty">데이터를 불러오지 못했어요</div>'; return; }
-  const t0 = today0().getTime();
-  const todays = pl.items.filter((it) => itemDate(it).getTime() === t0).sort((a, b) => CATS.indexOf(a.cat) - CATS.indexOf(b.cat));
-  const accAll = await getAccAll(), openAcc = accAll.list.filter((a) => !a.done).length, lng = (d.longrepair || []).length;
+  const t0 = today0(), t0m = t0.getTime();
+  const todays = pl.items.filter((it) => itemDate(it).getTime() === t0m).sort((a, b) => CATS.indexOf(a.cat) - CATS.indexOf(b.cat) || (a.line || "").localeCompare(b.line || ""));
+  const accAll = await getAccAll(), openList = accAll.list.filter((a) => !a.done);
+  const mStart = new Date(t0.getFullYear(), t0.getMonth(), 1).getTime();
+  const doneMonth = accAll.list.filter((a) => a.done && itemDate(a).getTime() >= mStart).length, lng = (d.longrepair || []).length;
   $("#hTiles").innerHTML =
-    `<button class="tile2" data-go="plan"><b>${todays.length}</b><small>오늘 작업</small></button>` +
-    `<button class="tile2${openAcc ? " warn2" : ""}" data-go="stat" data-seg="acc"><b>${openAcc}</b><small>처리 중 사고</small></button>` +
-    `<button class="tile2${lng ? " warn2" : ""}" data-go="stat" data-seg="long"><b>${lng}</b><small>장기 미수선</small></button>`;
+    `<button class="kpi" data-go="plan"><b>${todays.length}</b><small>오늘 작업</small></button>` +
+    `<button class="kpi${openList.length ? " bad" : ""}" data-go="stat" data-seg="acc" data-af="open"><b>${openList.length}</b><small>처리 중 사고</small></button>` +
+    `<button class="kpi ok" data-go="stat" data-seg="acc" data-af="done"><b>${doneMonth}</b><small>이번달 완료</small></button>` +
+    `<button class="kpi${lng ? " warn" : ""}" data-go="stat" data-seg="long"><b>${lng}</b><small>장기 미수선</small></button>`;
+  $("#hAlert").innerHTML = openList.length
+    ? `<div class="alertbox"><h3>${IC.alert}처리 중인 사고·고장 ${openList.length}건${accAll.demo ? ' <span class="tag smp">샘플</span>' : ""}</h3>` +
+      openList.sort((a, b) => itemDate(b) - itemDate(a)).slice(0, 3).map((a) => `<div class="ar" data-go="stat" data-seg="acc" data-af="open"><b>${esc(accPlace(a) || "(역 미입력)")}</b><span>${esc(a.what || a.type || "")}</span><small class="when">${dLabel(itemDate(a))}</small></div>`).join("") + "</div>"
+    : "";
+  $("#hPlan").innerHTML = `<div class="ph"><h2>${IC.cal}오늘 일정 · ${dLabel(t0)}${pl.demo ? ' <span class="tag smp">샘플</span>' : ""}</h2><button class="more" data-go="plan">전체 보기</button></div>` +
+    (todays.length ? todays.slice(0, 6).map(planRow).join("") + (todays.length > 6 ? `<button class="more" data-go="plan" style="display:block;margin:0 auto 10px">외 ${todays.length - 6}건 더 보기</button>` : "") : '<div class="empty1" style="padding:8px 14px 16px">오늘 잡힌 점검·검사·중보수가 없어요</div>');
+
   const ct = await getContacts(), duty = await getDuty();
-  const cell = (p) => `<a class="pc" href="${esc(telHref(p.tel))}"><span>${esc(p.name)}${p.role ? `<small class="rk">${esc(p.role)}</small>` : ""}</span>${callIc}</a>`;
-  const body = (arr) => (arr && arr.length ? arr.map(cell).join("") : '<div class="empty1">없음</div>');
-  const cls = { "통상": "l0", "1호선": "l1", "2호선": "l2" };
-  const dutyCell = (k, p, on) => `<button class="pc dpick${on ? " on" : ""}" data-k="${k}|${esc(p.name)}"><span>${esc(p.name)}${p.role ? `<small class="rk">${esc(p.role)}</small>` : ""}</span><em>${on ? "당직 ✓" : "당직"}</em></button>`;
-  const venCol = (k) => {
-    const v = ct.data[k] || {}, ppl = v.people || [], dset = new Set(duty.duty), oset = new Set(duty.off);
+  const cls = { "통상": "l0x", "1호선": "l1x", "2호선": "l2x" };
+  const cell = (p, c) => `<a class="pc ${c}" href="${esc(telHref(p.tel))}"><span>${esc(p.name)}${p.role ? `<small class="rk">${esc(p.role)}</small>` : ""}</span>${callIc}</a>`;
+  const grid = (arr, c, extra) => (arr && arr.length ? `<div class="pgrid${extra ? " " + extra : ""}">${arr.map((p) => cell(p, c)).join("")}</div>` : '<div class="empty1">없음</div>');
+  const dset = new Set(duty.duty), oset = new Set(duty.off);
+  const tabsHtml = ["1호선", "2호선", "staff"].map((k) => {
+    if (k === "staff") return `<button data-ct="staff" class="${homeCt === "staff" ? "on" : ""}">승강관리소<span class="tag smp" style="height:18px">샘플</span></button>`;
+    const v = ct.data[k] || {}, nD = (v.people || []).filter((p) => dset.has(k + "|" + p.name)).length;
+    return `<button data-ct="${k}" class="${homeCt === k ? "on" : ""}"><span class="lt ${lineCls[k]}"></span>${k} ${esc(v.co || "")}${nD ? ` · 당직 ${nD}` : ""}</button>`;
+  }).join("");
+  let body = "";
+  if (homeCt === "staff") {
+    const st = (d.work && d.work.staff) || {};
+    body = ["통상", "1호선", "2호선"].map((k) => `<div class="sub"><span class="lt ${lineCls[k] || ""}"></span>${k === "통상" ? "통상 근무" : k + " 담당"} ${(st[k] || []).length}명</div>${grid(st[k], cls[k])}`).join("") + '<div class="note" style="padding:0 14px 10px">관리소 직원 명단은 아직 샘플이에요. 실제 명단을 받으면 바꿔 넣어요.</div>';
+  } else {
+    const k = homeCt, v = ct.data[k] || {}, ppl = v.people || [], c = cls[k];
     const isD = (p) => dset.has(k + "|" + p.name), isO = (p) => oset.has(k + "|" + p.name) && !isD(p);
     const dayP = ppl.filter((p) => !isD(p) && !isO(p)), dutyP = ppl.filter(isD), offP = ppl.filter(isO);
-    const nums = `<div class="nums">${v.in ? `<span>사내 ${esc(v.in)}</span>` : ""}${v.gen ? `<a href="${esc(telHref(v.gen))}">일반 ${esc(v.gen)}</a>` : ""}</div>`;
-    const inner = dutyMode === k
-      ? `<div class="sub duty">눌러서 오늘 당직 지정</div>${ppl.map((p) => dutyCell(k, p, isD(p))).join("")}`
-      : `<div class="sub">주간 ${dayP.length}명</div>${body(dayP)}<div class="sub duty">당직 ${dutyP.length}명</div>${body(dutyP)}` + (offP.length ? `<div class="sub off">휴무 ${offP.length}명</div><div class="offlist">${offP.map(cell).join("")}</div>` : "");
-    return `<div class="col ${cls[k]}"><div class="ch">${k} · ${esc(v.co || "")}</div>${nums}<div class="cb">${inner}</div><button class="link dmode" data-m="${k}">${dutyMode === k ? "지정 끝내기" : "오늘 당직 지정"}</button></div>`;
-  };
-  const w = d.work || {}, st = w.staff || {};
-  $("#hWork").innerHTML =
-    '<div class="grp"><h3>승강관리소 직원</h3><div class="cols c3">' +
-    ["통상", "1호선", "2호선"].map((k) => `<div class="col ${cls[k]}"><div class="ch">${k === "통상" ? "통상" : k + " 담당"}</div><div class="cb">${body(st[k])}</div></div>`).join("") +
-    `</div></div><div class="grp"><h3>승강업체 비상연락망${ct.demo ? "" : ""}</h3><div class="cols c2">` + ["1호선", "2호선"].map(venCol).join("") +
-    `</div><div class="planbar" style="margin-top:8px"><label class="btn">비상연락망 불러오기(엑셀)<input type="file" accept=".xlsx,.xlsm,.json,application/json" id="ctFile"></label>${ct.demo ? "" : '<button class="link" id="ctClear">지우기</button>'}</div><details class="dtl"><summary>파일 저장이 안 되면: 붙여넣어서 불러오기</summary><textarea id="ctPaste" rows="4" placeholder="받은 연락망 글(JSON)을 그대로 붙여넣으세요"></textarea><button class="btn" id="ctPasteGo">붙여넣은 내용으로 불러오기</button></details>${ct.demo ? "" : `<div class="planbar"><label class="btn">업체 근무표 불러오기(엑셀)<input type="file" accept=".xlsx,.xlsm" id="rsFile"></label>${duty.has ? '<small class="note">오늘 근무 반영됨</small>' : '<small class="note">오늘 근무표 없음</small>'}</div>`}</div>`;
-  $("#hPlan").innerHTML = `<div class="sec"><h2>오늘 작업 · ${dLabel(new Date())}</h2></div>` + (todays.map(itemHtml).join("") || '<div class="empty">오늘 작업이 없어요</div>');
-  $("#hAcc").innerHTML = '<div class="sec"><h2>최근 사고</h2></div>' + accAll.list.slice().sort((a, b) => itemDate(b) - itemDate(a)).slice(0, 3).map(accHtml).join("");
+    const nums = (v.gen || v.in) ? `<div class="cnum">${v.gen ? `<a href="${esc(telHref(v.gen))}"><small>일반전화 · 누르면 연결</small>${esc(v.gen)}</a>` : ""}${v.in ? `<span><small>사내전화</small>${esc(v.in)}</span>` : ""}</div>` : "";
+    if (dutyMode === k) {
+      body = nums + `<div class="sub duty">오늘 당직으로 지정할 사람을 누르세요</div><div class="pgrid">${ppl.map((p) => `<button class="pc dpick${isD(p) ? " on" : ""}" data-k="${k}|${esc(p.name)}"><span>${esc(p.name)}${p.role ? `<small class="rk">${esc(p.role)}</small>` : ""}</span><em>${isD(p) ? "당직 ✓" : "당직"}</em></button>`).join("")}</div>`;
+    } else {
+      body = nums + `<div class="sub duty">오늘 당직 ${dutyP.length}명</div>` + (dutyP.length ? grid(dutyP, c, "duty") : '<div class="empty1">지정된 당직이 없어요 · 아래 "당직 지정"을 누르세요</div>') +
+        `<div class="sub">주간 근무 ${dayP.length}명</div>` + grid(dayP, c) +
+        (offP.length ? `<div class="sub off">휴무 ${offP.length}명</div>${grid(offP, c, "offlist")}` : "");
+    }
+    body += `<div class="cfoot"><span class="note" style="margin:0">${ct.demo ? '<span class="tag smp">샘플 연락처</span>' : duty.has ? "오늘 근무표 반영됨" : "근무표 없음 · 당직은 직접 지정"}</span><button class="link dmode" data-m="${k}">${dutyMode === k ? "지정 끝내기" : "당직 지정"}</button></div>`;
+  }
+  $("#hWork").innerHTML = `<div class="ph"><h2>${IC.people}연락처 · 비상연락망</h2></div><div class="ctabs">${tabsHtml}</div>${body}`;
+
+  const recent = accAll.list.slice().sort((a, b) => itemDate(b) - itemDate(a) || (b.id || 0) - (a.id || 0)).slice(0, 3);
+  $("#hAcc").innerHTML = `<div class="ph"><h2>${IC.alert}최근 사고·고장${accAll.demo ? ' <span class="tag smp">샘플</span>' : ""}</h2><button class="more" data-go="stat" data-seg="acc">전체 보기</button></div>` + (recent.length ? recent.map((a) => accHtml(a, true)).join("") : '<div class="empty1" style="padding:8px 14px 16px">기록이 없어요</div>');
+
+  const nPeople = Object.values(ct.data).reduce((n, v) => n + ((v && v.people) || []).length, 0);
+  $("#hDataBody").innerHTML =
+    `<div class="hsec" style="margin-top:0">비상연락망 ${ct.demo ? '<span class="tag smp">샘플 사용 중</span>' : `<span class="tag ok">${nPeople}명 불러옴</span>`}</div>` +
+    `<div class="planbar"><label class="btn">엑셀·JSON 파일 불러오기<input type="file" accept=".xlsx,.xlsm,.json,application/json" id="ctFile"></label>${ct.demo ? "" : '<button class="btn sm danger" id="ctClear" style="flex:none">지우기</button>'}</div>` +
+    `<details class="dtl"><summary>파일 저장이 안 되면: 붙여넣어서 불러오기</summary><textarea id="ctPaste" rows="4" placeholder="받은 연락망 글(JSON)을 그대로 붙여넣으세요"></textarea><button class="btn wide" id="ctPasteGo">붙여넣은 내용으로 불러오기</button></details>` +
+    `<div class="hsec">업체 근무표 ${duty.has ? '<span class="tag ok">오늘 반영됨</span>' : '<span class="tag">오늘 근무표 없음</span>'}</div>` +
+    `<label class="btn wide">근무표 엑셀 불러오기<input type="file" accept=".xlsx,.xlsm" id="rsFile"></label>` +
+    '<p class="note">근무표를 넣으면 날짜별 주간·당직·휴무가 자동으로 나뉘어요. 비상연락망 이름과 맞춰 읽으니 연락망을 먼저 불러오세요.</p>';
 }
+
 
 /* 업체 근무표(엑셀) → 날짜별 당직·휴무. 이름 칸이면 '당/휴' 같은 표시를, 주간/당직 칸이면 적힌 이름을 읽음 */
 function parseRoster(grids, fname, contacts) {
@@ -808,32 +855,75 @@ document.addEventListener("change", async (e) => {
     toast(`연락처 ${Object.values(data).reduce((n, v) => n + v.people.length, 0)}명 불러왔어요`, 4000); renderHome();
   } catch (err) { toast("불러오지 못했어요: " + err.message, 6000); }
 });
-$("#hTiles").addEventListener("click", (e) => { const b = e.target.closest("[data-go]"); if (!b) return; if (b.dataset.seg) statSeg = b.dataset.seg; showTab(b.dataset.go); });
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-go]"); if (!b || !b.closest("main")) return;
+  if (b.dataset.seg) statSeg = b.dataset.seg;
+  if (b.dataset.af) accState.f = b.dataset.af;
+  showTab(b.dataset.go);
+});
+$("#hWork").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-ct]"); if (!b) return;
+  homeCt = b.dataset.ct; dutyMode = null; try { localStorage.setItem("sdj-ct", homeCt); } catch (er) {} renderHome();
+});
+$("#hAcc").addEventListener("click", async (e) => {
+  const it = e.target.closest("[data-id]"); if (!it) return;
+  const all = (await idbGet("acc").catch(() => null)) || []; const r = all.find((x) => x.id === +it.dataset.id); if (r) openAcc(r);
+});
+/* 키보드가 열리면 입력칸이 가려지지 않게 */
+document.addEventListener("focusin", (e) => {
+  const el = e.target; if (!el.matches || !el.matches("input[type=text],input[type=date],textarea,select") || !el.closest(".sheet")) return;
+  setTimeout(() => { try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (er) {} }, 300);
+});
+
 
 /* ---------- 일정 ---------- */
-const planState = { p: "today", f: "all" };
+const planState = { p: "today", f: "all", q: "" };
 function planRange(p) {
   const t = today0();
   if (p === "today") return [t, t];
   if (p === "week") { const a = new Date(t); a.setDate(t.getDate() - t.getDay()); const b = new Date(a); b.setDate(a.getDate() + 6); return [a, b]; } // 일요일 시작(점검표와 같게)
   return [new Date(t.getFullYear(), t.getMonth(), 1), new Date(t.getFullYear(), t.getMonth() + 1, 0)];
 }
+const dKey = (d) => d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate());
+let planInit = false;
 async function renderPlan() {
-  const { items, demo } = await getPlan();
+  const { items, demo, name } = await getPlan();
   $("#planDemo").hidden = !demo; $("#planClear").hidden = demo;
-  $("#planKind").innerHTML = chipsHtml([["all", "전체"], ["1호선", "1호선"], ["2호선", "2호선"], ["검사", "검사"], ["중보수", "중보수"]], planState.f);
+  const ds = items.map((i) => i.date).filter(Boolean).sort();
+  $("#planSrc").innerHTML = demo ? '월간점검표 불러오기 <span class="tag smp">샘플 일정 보는 중</span>' : `${esc(name || "불러온 일정")} <span class="tag ok">${items.length}건${ds.length ? " · " + ds[0].slice(5).replace("-", "/") + "~" + ds[ds.length - 1].slice(5).replace("-", "/") : ""}</span>`;
+  if (!planInit) { planInit = true; $("#planData").open = demo; }
+  $("#planKind").innerHTML = chipsHtml([["all", "전체"], ["1호선", "1호선"], ["2호선", "2호선"], ["점검", "점검"], ["검사", "검사"], ["중보수", "중보수"]], planState.f);
   [...$("#planPeriod").children].forEach((b) => b.classList.toggle("on", b.dataset.p === planState.p));
-  const [a, b] = planRange(planState.p), f = planState.f;
-  const rows = items.map((it) => ({ it, d: itemDate(it) })).filter((x) => x.d >= a && x.d <= b)
-    .filter((x) => f === "all" || (f === "1호선" || f === "2호선" ? x.it.line === f : x.it.cat === f))
+  const [a, b] = planRange(planState.p), f = planState.f, q = planState.q.toLowerCase().replace(/\s/g, "");
+  const match = (it) => (f === "all" || (f === "1호선" || f === "2호선" ? it.line === f : it.cat === f)) && (!q || hasText([it.text, it.cat, it.line, it.kind].join(" ").toLowerCase().replace(/\s/g, ""), q));
+  const all = items.map((it) => ({ it, d: itemDate(it) })).filter((x) => match(x.it));
+  const rows = all.filter((x) => x.d >= a && x.d <= b)
     .sort((x, y) => x.d - y.d || CATS.indexOf(x.it.cat) - CATS.indexOf(y.it.cat) || (x.it.line || "").localeCompare(y.it.line || "") || (x.it.kind || "").localeCompare(y.it.kind || ""));
-  if (!rows.length) { $("#planList").innerHTML = `<div class="empty">이 기간·조건에 일정이 없어요${demo ? "" : "<br>다른 달 점검표는 위 버튼으로 불러오세요."}</div>`; return; }
-  let html = "", last = -1; const t0 = today0().getTime();
-  rows.forEach((x) => { const k = x.d.getTime(); if (k !== last) { html += `<div class="dayh${k === t0 ? " today" : ""}">${dLabel(x.d)}${k === t0 ? " · 오늘" : ""}</div>`; last = k; } html += itemHtml(x.it); });
-  $("#planList").innerHTML = html;
+  const t0 = today0().getTime();
+  // 이번달: 한눈에 보는 달력
+  if (planState.p === "month") {
+    const y = a.getFullYear(), m = a.getMonth(), first = new Date(y, m, 1).getDay(), last = new Date(y, m + 1, 0).getDate();
+    const byDay = {}; rows.forEach((x) => { const k = x.d.getDate(); (byDay[k] = byDay[k] || []).push(x.it.cat); });
+    let cells = "일월화수목금토".split("").map((w) => `<div class="wd">${w}</div>`).join("");
+    for (let i = 0; i < first; i++) cells += '<div class="d x"></div>';
+    for (let dd = 1; dd <= last; dd++) {
+      const dt = new Date(y, m, dd), k = dt.getTime(), cs = byDay[dd] || [];
+      const dots = cs.slice(0, 6).map((c) => `<i class="${catCls[c] || "c1"}"></i>`).join("");
+      cells += `<button class="d${cs.length ? " has" : ""}${k === t0 ? " t" : ""}${k < t0 ? " past" : ""}" data-day="${dKey(dt)}">${dd}<span class="dots">${dots}</span></button>`;
+    }
+    $("#planCal").innerHTML = `<div class="cal"><div class="cg">${cells}</div><div class="lg"><span><i></i>점검</span><span><i class="c2"></i>검사</span><span><i class="c3"></i>중보수</span><span>날짜를 누르면 그날로 이동</span></div></div>`;
+  } else $("#planCal").innerHTML = "";
+  if (!rows.length) { $("#planList").innerHTML = `<div class="empty">${IC.cal}이 기간·조건에 일정이 없어요${demo ? "" : "<br>다른 달 점검표는 위 ‘불러오기’에서 넣으세요."}</div>`; return; }
+  const groups = []; rows.forEach((x) => { const k = x.d.getTime(); if (!groups.length || groups[groups.length - 1].k !== k) groups.push({ k, d: x.d, list: [] }); groups[groups.length - 1].list.push(x.it); });
+  $("#planList").innerHTML = groups.map((g) => {
+    const wd = g.d.getDay(), wc = wd === 0 ? "sun" : wd === 6 ? "sat" : "";
+    return `<div class="dayg${g.k === t0 ? " today" : ""}" id="pd-${dKey(g.d)}"><div class="dayh"><span class="${wc}">${dLabel(g.d)}</span>${g.k === t0 ? '<span class="tag" style="background:var(--accent);color:var(--accent-ink)">오늘</span>' : ""}<small>${g.list.length}건</small></div>${g.list.map(planRow).join("")}</div>`;
+  }).join("");
 }
 $("#planPeriod").addEventListener("click", (e) => { const b = e.target.closest("[data-p]"); if (b) { planState.p = b.dataset.p; renderPlan(); } });
 $("#planKind").addEventListener("click", (e) => { const b = e.target.closest("[data-f]"); if (b) { planState.f = b.dataset.f; renderPlan(); } });
+$("#planQ").addEventListener("input", (e) => { planState.q = e.target.value; if (planState.q && planState.p === "today") planState.p = "month"; renderPlan(); });
+$("#planCal").addEventListener("click", (e) => { const b = e.target.closest("[data-day]"); if (!b) return; const g = document.getElementById("pd-" + b.dataset.day); if (g) g.scrollIntoView({ behavior: "smooth", block: "start" }); else toast("그날은 일정이 없어요"); });
 $("#planClear").onclick = async () => { if (!confirm("이 폰에 불러온 일정을 모두 지울까요?")) return; await idbSet("plan", { items: [] }); renderPlan(); toast("지웠어요"); };
 
 /* 월간점검표 엑셀(.xlsx/.xlsm) 읽기 — AI 없이 표 모양(요일 줄·분류 칸)으로 직접 읽음, 파일은 이 폰 밖으로 나가지 않음 */
@@ -916,7 +1006,7 @@ $("#planFile").addEventListener("change", async (e) => {
     let st = null; try { st = await idbGet("plan"); } catch (er) {}
     const nd = new Set(items.map((i) => i.date)); // 같은 날짜는 새 파일 내용으로 바꿈
     const keep = ((st && st.items) || []).filter((i) => !nd.has(i.date));
-    await idbSet("plan", { items: keep.concat(items), ts: Date.now() });
+    await idbSet("plan", { items: keep.concat(items), ts: Date.now(), name: (res.name || "").replace(/\s*\(.*\)$/, "") || (st && st.name) || "" });
     const ds = [...nd].sort(); toast(`${items.length}건 불러왔어요 (${ds[0].slice(5)} ~ ${ds[ds.length - 1].slice(5)})`, 4500);
     renderPlan();
   } catch (err) { toast("불러오지 못했어요: " + err.message, 6000); }
@@ -924,25 +1014,43 @@ $("#planFile").addEventListener("change", async (e) => {
 
 /* ---------- 재고 ---------- */
 const stockState = { q: "", f: "all" };
+let stockAll = [];
 async function renderStock() {
-  const d = await loadData("sample").catch(() => ({})); let arr = (d.stock || []).slice();
-  $("#stockF").innerHTML = chipsHtml([["all", "전체"], ["zero", "없는 것"], ["low", "부족(2개 이하)"]], stockState.f);
+  const d = await loadData("sample").catch(() => ({})); stockAll = (d.stock || []).slice();
+  const nZ = stockAll.filter((x) => x.qty === 0).length, nL = stockAll.filter((x) => x.qty > 0 && x.qty <= 2).length;
+  $("#stockF").innerHTML = [["all", "전체 부품", stockAll.length, ""], ["zero", "재고 없음", nZ, "zero"], ["low", "부족 (1~2개)", nL, "low"]].map(([v, l, n, c]) => `<button data-f="${v}" class="${c}${stockState.f === v ? " on" : ""}"><b>${n}</b><small>${l}</small></button>`).join("");
   const q = stockState.q.toLowerCase().replace(/\s/g, "");
-  if (q) arr = arr.filter((x) => hasText((x.n + x.sp).toLowerCase().replace(/\s/g, ""), q));
-  if (stockState.f === "zero") arr = arr.filter((x) => x.qty === 0); else if (stockState.f === "low") arr = arr.filter((x) => x.qty <= 2);
+  let arr = stockAll.map((x, i) => ({ ...x, i }));
+  if (q) arr = arr.filter((x) => hasText((x.n + x.sp + (x.loc || "")).toLowerCase().replace(/\s/g, ""), q));
+  if (stockState.f === "zero") arr = arr.filter((x) => x.qty === 0); else if (stockState.f === "low") arr = arr.filter((x) => x.qty > 0 && x.qty <= 2);
   arr.sort((a, b) => a.qty - b.qty || a.n.localeCompare(b.n, "ko"));
   $("#stockList").innerHTML = arr.map((x) => {
     const cc = x.qty === 0 ? "zero" : x.qty <= 2 ? "low" : "";
     let alt = "";
-    if (x.qty <= 2) alt = x.compat && x.compat.length ? `<div class="alt"><b>대체 가능</b> ${x.compat.map((c) => `${esc(c.n)} ${esc(c.sp)} · <b>${c.qty}개</b>`).join("<br>")}</div>` : (x.qty === 0 ? '<div class="alt" style="background:#fde7e5;color:var(--bad)">대체 부품 없음 · 구매 필요</div>' : "");
-    return `<div class="item"><div class="top"><div><b>${esc(x.n)}</b><div class="sub2">${esc(x.sp)} · 위치 ${esc(x.loc || "-")}</div></div><span class="qty ${cc}">${x.qty}개</span></div>${alt}</div>`;
-  }).join("") || '<div class="empty">찾는 부품이 없어요</div>';
+    if (x.qty <= 2) alt = x.compat && x.compat.length ? `<div class="alt"><b>대체 가능</b> · ${x.compat.map((c) => `${esc(c.n)} ${esc(c.sp)} <b>${c.qty}개</b>`).join(", ")}</div>` : (x.qty === 0 ? '<div class="alt none"><b>대체 부품 없음</b> · 구매 필요</div>' : "");
+    return `<div class="srow ${cc}" data-i="${x.i}"><div class="sm"><b>${esc(x.n)}</b><div class="mt">${esc(x.sp)} · 위치 ${esc(x.loc || "-")}</div>${alt}</div><div class="q"><b>${x.qty}</b><small class="${cc ? "" : "okc"}">${cc === "zero" ? "재고 없음" : cc === "low" ? "부족" : "정상"}</small></div></div>`;
+  }).join("") || `<div class="empty">${IC.box}찾는 부품이 없어요</div>`;
 }
 $("#stockQ").addEventListener("input", (e) => { stockState.q = e.target.value; renderStock(); });
 $("#stockF").addEventListener("click", (e) => { const b = e.target.closest("[data-f]"); if (b) { stockState.f = b.dataset.f; renderStock(); } });
+$("#stockList").addEventListener("click", async (e) => {
+  const r = e.target.closest("[data-i]"); if (!r) return; const x = stockAll[+r.dataset.i]; if (!x) return;
+  const st = x.qty === 0 ? ["bad", "재고 없음"] : x.qty <= 2 ? ["warn", "부족"] : ["ok", "정상"];
+  const hist = ((await idbGet("history").catch(() => null)) || []).filter((h) => h.part && (h.part.includes(x.n) || x.n.includes(h.part))).slice(-8).reverse();
+  $("#stockDet").innerHTML = `<h3>${esc(x.n)}</h3><div class="note" style="margin:0">${esc(x.sp)}</div>
+    <div class="bigq"><b style="color:var(--${st[0]})">${x.qty}</b><span>개</span><span class="tag ${st[0]}">${st[1]}</span></div>
+    <dl class="dl"><dt>규격</dt><dd>${esc(x.sp || "-")}</dd><dt>보관 위치</dt><dd>${esc(x.loc || "-")}</dd></dl>
+    <div class="hsec">대체 가능 부품</div>${x.compat && x.compat.length ? `<div class="mini">${x.compat.map((c) => `<div><span>${esc(c.n)} · ${esc(c.sp)}</span><b>${c.qty}개</b></div>`).join("")}</div>` : '<div class="note">등록된 대체 부품이 없어요</div>'}
+    <div class="hsec">최근 교체 기록 (이 폰에서 만든 사진대지)</div>${hist.length ? `<div class="mini">${hist.map((h) => `<div><span>${esc((h.date || "").slice(4, 6))}/${esc((h.date || "").slice(6, 8))} · ${esc([h.station, h.unit ? (h.kind || "") + h.unit : ""].filter(Boolean).join(" "))}</span><b>${h.count || 1}개</b></div>`).join("")}</div>` : '<div class="note">아직 기록이 없어요</div>'}
+    <div class="hsec">입고·출고 내역</div><div class="note">실제 재고 엑셀을 연결하면 여기에 입고·출고·사용 내역이 쌓여요.</div>`;
+  $("#stockBack").hidden = false;
+});
+$("#stockClose").onclick = () => ($("#stockBack").hidden = true);
+$("#stockBack").addEventListener("click", (e) => { if (e.target.id === "stockBack") $("#stockClose").click(); });
+
 
 /* ---------- 현황(사고 · 장기 미수선 · 교체 이력) ---------- */
-const accState = { f: "all", q: "" };
+const accState = { f: "all", q: "", p: "month", k: "all" };
 async function getAccAll() {
   let saved = []; try { saved = (await idbGet("acc")) || []; } catch (e) {}
   if (saved.length) return { list: saved, demo: false };
@@ -960,7 +1068,26 @@ function accTimes(a) {
   return `<div class="sub2">${parts}${st ? ` <b>(${st})</b>` : ""}${a.nonrun && a.nonrun !== "없음" ? ` · 비운행 ${esc(a.nonrun)}` : ""}</div>`;
 }
 const nl = (t) => esc(t).replace(/\n/g, "<br>");
-const accHtml = (a) => `<div class="item acc"${a.id ? ` data-id="${a.id}"` : ""}><div class="top"><b>${esc(accPlace(a) || "(역 미입력)")}</b><span class="when">${dLabel(itemDate(a))}</span></div><div class="sub2"><span class="pill">${esc(a.type || "")}</span><span class="pill ${a.done ? "ok" : "bad"}">${a.done ? "처리 완료" : "처리 중"}</span>${esc(a.what || "")}</div>${a.action ? `<div class="sub2">▸ ${nl(a.action)}</div>` : ""}${accTimes(a)}${a.note ? `<div class="sub2">※ ${nl(a.note)}</div>` : ""}</div>`;
+function accTL(a) {
+  const r = toMin(a.tRecv), ar = toMin(a.tArr), d = toMin(a.tDone); if (r === null && ar === null && d === null) return "";
+  const df = (x, y) => (x !== null && y !== null && y >= x ? y - x : null);
+  const go = df(r, ar), fix = df(ar, d), tot = df(r, d);
+  const node = (t, l) => `<div class="n${t ? " d" : " e"}"><i></i><small>${l}</small><b>${t || "--:--"}</b></div>`;
+  const seg = (v, l) => `<div class="s${v !== null ? " f" : ""}">${v !== null ? `<em>${l} ${v}분</em>` : ""}</div>`;
+  return `<div class="tl">${node(a.tRecv, "접수")}${seg(go, "출동")}${node(a.tArr, "도착")}${seg(fix, "조치")}${node(a.tDone, "완료")}${tot !== null ? `<div class="tot"><small>총</small><b>${tot}분</b></div>` : ""}</div>`;
+}
+function accTLm(a) {
+  const r = toMin(a.tRecv), ar = toMin(a.tArr), d = toMin(a.tDone); if (r === null && ar === null && d === null) return "";
+  const df = (x, y) => (x !== null && y !== null && y >= x ? y - x : null), go = df(r, ar), tot = df(r, d);
+  return `<div class="tlm">${[a.tRecv && "접수 " + a.tRecv, a.tArr && "도착 " + a.tArr, a.tDone && "완료 " + a.tDone].filter(Boolean).join(" → ")}${go !== null ? ` · <b>출동 ${go}분</b>` : ""}${tot !== null ? ` · <b>총 ${tot}분</b>` : ""}</div>`;
+}
+const accHtml = (a, mini) => {
+  const open = !a.done;
+  return `<div class="acard${open ? " open" : ""}${mini ? " mini2" : ""}"${a.id ? ` data-id="${a.id}"` : ""}><div class="top"><b>${esc(accPlace(a) || "(역 미입력)")}</b><span class="when">${dLabel(itemDate(a))}</span></div>` +
+    `<div class="tags">${a.type ? `<span class="tag">${esc(a.type)}</span>` : ""}<span class="tag ${open ? "bad" : "ok"}">${open ? "처리 중" : "처리 완료"}</span>${a.nonrun && a.nonrun !== "없음" ? `<span class="tag warn">비운행 ${esc(a.nonrun)}</span>` : ""}</div>` +
+    (a.what ? `<div class="what">${esc(a.what)}</div>` : "") + (a.action && !mini ? `<div class="act">▸ ${nl(a.action)}</div>` : "") + (mini ? accTLm(a) : accTL(a)) + (a.note && !mini ? `<div class="nt">${nl(a.note)}</div>` : "") + "</div>";
+};
+
 
 /* 사고·고장 조치 입력 (카톡 보고 양식 그대로) */
 let accForm = { id: null, kind: "EL", type: "고장", non: "없음", done: 1 };
@@ -1078,21 +1205,54 @@ async function renderStat() {
   const d = await loadData("sample").catch(() => ({}));
   if (statSeg === "acc") {
     const { list, demo } = await getAccAll(); $("#accDemo").hidden = !demo;
-    $("#accF").innerHTML = chipsHtml([["all", "전체"], ["open", "처리 중"], ["done", "처리 완료"]], accState.f);
+    const t0 = today0(), mStart = new Date(t0.getFullYear(), t0.getMonth(), 1).getTime();
+    const inP = list.filter((a) => accState.p === "all" || itemDate(a).getTime() >= mStart).filter((a) => accState.k === "all" || a.kind === accState.k || (!a.kind && (a.station || "").includes(accState.k)));
+    const avg = (fn) => { const v = inP.map(fn).filter((x) => x !== null); return v.length ? Math.round(v.reduce((s, x) => s + x, 0) / v.length) : null; };
+    const diff = (x, y) => { const p = toMin(x), q = toMin(y); return p !== null && q !== null && q >= p ? q - p : null; };
+    const aGo = avg((a) => diff(a.tRecv, a.tArr)), aFix = avg((a) => diff(a.tArr, a.tDone)), nOpen = inP.filter((a) => !a.done).length;
+    $("#accStats").innerHTML =
+      `<div><b>${inP.length}<em>건</em></b><small>${accState.p === "all" ? "전체" : "이번달"} 건수</small></div>` +
+      `<div class="${nOpen ? "bad" : ""}"><b>${nOpen}<em>건</em></b><small>처리 중</small></div>` +
+      `<div><b>${aGo === null ? "-" : aGo}<em>${aGo === null ? "" : "분"}</em></b><small>평균 출동</small></div>` +
+      `<div><b>${aFix === null ? "-" : aFix}<em>${aFix === null ? "" : "분"}</em></b><small>평균 조치</small></div>`;
+    const c = (attr, v, l, cur) => `<button data-${attr}="${v}"${cur === v ? ' class="on"' : ""}>${l}</button>`;
+    $("#accF").innerHTML = c("f", "all", "전체", accState.f) + c("f", "open", "처리 중", accState.f) + c("f", "done", "처리 완료", accState.f) + '<span class="sep"></span>' +
+      c("p", "month", "이번달", accState.p) + c("p", "all", "전체 기간", accState.p) + '<span class="sep"></span>' + c("k", "EL", "EL", accState.k) + c("k", "ES", "ES", accState.k);
     const q = accState.q.toLowerCase().replace(/\s/g, "");
-    const arr = list.filter((a) => accState.f === "all" || (accState.f === "done" ? a.done : !a.done))
+    const arr = inP.filter((a) => accState.f === "all" || (accState.f === "done" ? a.done : !a.done))
       .filter((a) => !q || hasText([accPlace(a), a.type, a.what, a.action, a.note, a.nonrun].join(" ").toLowerCase().replace(/\s/g, ""), q))
-      .sort((a, b) => itemDate(b) - itemDate(a) || (b.id || 0) - (a.id || 0));
-    $("#accCnt").textContent = q ? `검색 결과 ${arr.length}건` : `${arr.length}건`;
-    $("#accList").innerHTML = arr.map(accHtml).join("") || '<div class="empty">기록이 없어요</div>';
+      .sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1) || itemDate(b) - itemDate(a) || (b.id || 0) - (a.id || 0));
+    $("#accCnt").textContent = q ? `검색 결과 ${arr.length}건 · 처리 중인 건이 위에 보여요` : `${arr.length}건 · 처리 중인 건이 위에 보여요`;
+    $("#accList").innerHTML = arr.map((a) => accHtml(a)).join("") || `<div class="empty">${IC.alert}기록이 없어요</div>`;
   } else {
     const t = today0().getTime();
     const arr = (d.longrepair || []).map((x) => ({ ...x, days: Math.round((t - itemDate(x).getTime()) / 864e5) })).sort((a, b) => b.days - a.days);
-    $("#longList").innerHTML = arr.map((x) => `<div class="item"><div class="top"><b>${esc(x.place)} · ${esc(x.item)}</b><span class="pill ${x.days >= 30 ? "bad" : "warn"}">${x.days}일째</span></div><div class="sub2">${esc(x.why || "")} · ${dLabel(itemDate(x))}부터</div></div>`).join("") || '<div class="empty">장기 미수선이 없어요</div>';
+    const over = arr.filter((x) => x.days >= 30).length;
+    $("#longSum").innerHTML = `<div><b>${arr.length}<em>건</em></b><small>장기 미수선</small></div><div class="${over ? "bad" : ""}"><b>${over}<em>건</em></b><small>30일 넘음</small></div><div><b>${arr.length ? arr[0].days : 0}<em>일</em></b><small>가장 오래됨</small></div><div><b>${arr.length ? Math.round(arr.reduce((s, x) => s + x.days, 0) / arr.length) : 0}<em>일</em></b><small>평균 대기</small></div>`;
+    $("#longList").innerHTML = arr.map((x) => `<div class="lrow${x.days >= 30 ? " over" : ""}"><div class="dd"><b>${x.days}</b><small>일째</small></div><div class="lm"><b>${esc(x.place)} · ${esc(x.item)}</b><div>${esc(x.why || "")} · ${dLabel(itemDate(x))}부터</div><div class="meter"><i style="width:${Math.min(100, Math.round((x.days / 60) * 100))}%"></i></div></div></div>`).join("") || `<div class="empty">장기 미수선이 없어요</div>`;
   }
 }
 $("#statSeg").addEventListener("click", (e) => { const b = e.target.closest("[data-s]"); if (b) { statSeg = b.dataset.s; renderStat(); } });
-$("#accF").addEventListener("click", (e) => { const b = e.target.closest("[data-f]"); if (b) { accState.f = b.dataset.f; renderStat(); } });
+$("#accF").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.f) accState.f = b.dataset.f;
+  if (b.dataset.p) accState.p = b.dataset.p;
+  if (b.dataset.k) accState.k = accState.k === b.dataset.k ? "all" : b.dataset.k;
+  renderStat();
+});
+
+
+async function renderPhotoRecent() {
+  const h = (await idbGet("history").catch(() => null)) || [], box = $("#photoRecent");
+  const g = new Map(); h.forEach((r) => { if (!g.has(r.ts)) g.set(r.ts, []); g.get(r.ts).push(r); });
+  const list = [...g.entries()].sort((a, b) => b[0] - a[0]).slice(0, 5);
+  if (!list.length) { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = `<div class="ph"><h2>${IC.photo}최근 만든 사진대지</h2><button class="more" data-go="stat" data-seg="hist">교체 이력 보기</button></div>` + list.map(([ts, rs]) => {
+    const dt = new Date(ts), place = [...new Set(rs.map((r) => [r.station, r.unit ? (r.kind || "") + r.unit : ""].filter(Boolean).join(" ")))].join(", ");
+    return `<div class="rr"><div class="rd">${dt.getMonth() + 1}/${dt.getDate()}</div><div class="rm"><b>${esc(place || "(역 미입력)")}</b><small>${esc([...new Set(rs.map((r) => r.part).filter(Boolean))].join(", ") || "부품 미입력")} · ${rs.length}건</small></div></div>`;
+  }).join("");
+}
 
 /* ---------- 시작 ---------- */
 async function init() {
