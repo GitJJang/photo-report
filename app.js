@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.5.1";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -608,10 +608,18 @@ const telHref = (t) => "tel:" + String(t || "").replace(/[^\d+]/g, "");
 const callBtn = (t) => `<a class="call" href="${esc(telHref(t))}"><svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A15 15 0 013 6a2 2 0 012-2z"/></svg>전화</a>`;
 async function renderHome() {
   let d; try { d = await loadData("sample"); } catch (e) { $("#hWork").innerHTML = '<div class="empty">데이터를 불러오지 못했어요</div>'; return; }
-  const w = d.work || {};
-  $("#hWork").innerHTML = '<div class="sec"><h2>오늘 근무 · 연락</h2></div>' +
-    (w["관리소"] || []).map((p) => `<div class="prow"><div class="who"><b>${esc(p.name)}</b><small>승강관리소 ${esc(p.shift)}</small></div>${callBtn(p.tel)}</div>`).join("") +
-    (w["업체"] || []).map((p) => `<div class="prow"><div class="who"><b>${esc(p.name)}</b><small>${esc(p.line)} ${esc(p.co)} · ${esc(p.kind)}</small></div>${callBtn(p.tel)}</div>`).join("");
+  const w = d.work || {}, st = w.staff || {}, vd = w.vendor || {};
+  const ph = '<svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A15 15 0 013 6a2 2 0 012-2z"/></svg>';
+  const cell = (p) => `<a class="pc" href="${esc(telHref(p.tel))}"><span>${p.role ? `<small>${esc(p.role)}</small>` : ""}${esc(p.name)}</span>${ph}</a>`;
+  const body = (arr) => (arr && arr.length ? arr.map(cell).join("") : '<div class="empty1">없음</div>');
+  const cls = { "통상": "l0", "1호선": "l1", "2호선": "l2" };
+  $("#hWork").innerHTML =
+    '<div class="grp"><h3>승강관리소 직원</h3><div class="cols c3">' +
+    ["통상", "1호선", "2호선"].map((k) => `<div class="col ${cls[k]}"><div class="ch">${k === "통상" ? "통상" : k + " 담당"}</div><div class="cb">${body(st[k])}</div></div>`).join("") +
+    '</div></div>' +
+    '<div class="grp"><h3>승강업체</h3><div class="cols c2">' +
+    ["1호선", "2호선"].map((k) => { const v = vd[k] || {}; return `<div class="col ${cls[k]}"><div class="ch">${k} · ${esc(v.co || "")}</div><div class="cb"><div class="sub">주간 ${(v.day || []).length}명</div>${body(v.day)}<div class="sub duty">당직 ${(v.duty || []).length}명</div>${body(v.duty)}</div></div>`; }).join("") +
+    '</div></div>';
   $("#hPlan").innerHTML = '<div class="sec"><h2>오늘 작업</h2></div>' +
     ((d.plan || []).map((p) => `<div class="prow"><div class="who"><b>${esc(p.place)}</b><small><span class="pill">${esc(p.kind)}</span>${esc(p.who)}</small></div></div>`).join("") || '<div class="empty">오늘 작업이 없어요</div>');
   $("#hAcc").innerHTML = '<div class="sec"><h2>최근 사고</h2></div>' +

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#e0a100">
+<meta name="theme-color" content="#1b2438">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
@@ -11,20 +11,22 @@
 <title>사진대지</title>
 <style>
 :root{
-  --bg:#f4f4f1;--card:#fff;--ink:#1d1d1b;--muted:#6b6b66;--line:#dcdcd5;
-  --accent:#e0a100;--accent-ink:#241a00;--accent-soft:#fdf3d4;--bad:#b3261e;--ok:#1d7a46;
-  --r:12px;--font:system-ui,-apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
+  --bg:#f3f4f7;--card:#fff;--ink:#151922;--muted:#667085;--line:#e3e6ec;
+  --head:#1b2438;--head-ink:#fff;
+  --accent:#f2a900;--accent-ink:#231800;--accent-soft:#fff4d6;--bad:#c62828;--ok:#1b7f4b;
+  --l1:#d93a32;--l2:#12975a;--l0:#4b5a78;
+  --r:14px;--font:system-ui,-apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
 }
 @media (prefers-color-scheme:dark){
-  :root{--bg:#161614;--card:#222220;--ink:#f1f1ec;--muted:#a3a39b;--line:#3a3a36;--accent-soft:#3a3000;--bad:#ff8a80;--ok:#66d19e}
+  :root{--bg:#0f1218;--card:#1a1f2b;--ink:#eef0f5;--muted:#9aa3b5;--line:#2c3342;--head:#121827;--accent-soft:#3a2f08;--bad:#ff8a80;--ok:#5fd29a;--l1:#ff6b63;--l2:#3ccf8a;--l0:#8fa0c4}
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--font)}
 body{padding-bottom:calc(92px + env(safe-area-inset-bottom))}
-header{position:sticky;top:0;z-index:20;background:var(--accent);color:var(--accent-ink);padding:calc(10px + env(safe-area-inset-top)) 16px 10px;display:flex;align-items:center;gap:10px}
+header{position:sticky;top:0;z-index:20;background:var(--head);color:var(--head-ink);padding:calc(10px + env(safe-area-inset-top)) 16px 10px;display:flex;align-items:center;gap:10px}
 header h1{font-size:18px;margin:0;flex:1}
 header .cnt{font-size:13px;opacity:.8}
-.iconbtn{background:rgba(0,0,0,.12);border:0;color:inherit;border-radius:10px;min-width:44px;height:40px;font:700 18px var(--font);cursor:pointer}
+.iconbtn{background:rgba(255,255,255,.14);border:0;color:inherit;border-radius:10px;min-width:44px;height:40px;font:700 18px var(--font);cursor:pointer}
 main{max-width:720px;margin:0 auto;padding:12px 16px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin:0 0 14px}
 .card h2{font-size:15px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
@@ -134,6 +136,24 @@ body{padding-bottom:calc(140px + env(safe-area-inset-bottom))}
 .hrow2 .hwhen{color:var(--muted);font-size:13px;white-space:nowrap}
 .dtl{margin:0 0 12px}
 .dtl summary{cursor:pointer;color:var(--muted);font-size:13px;padding:6px 0}
+
+.grp{margin:0 0 14px}
+.grp h3{margin:0 0 6px;font-size:13px;color:var(--muted);font-weight:700;display:flex;align-items:center;gap:6px}
+.cols{display:grid;gap:8px;align-items:start}
+.cols.c3{grid-template-columns:repeat(3,1fr)}
+.cols.c2{grid-template-columns:repeat(2,1fr)}
+.col{min-width:0}
+.col .ch{display:flex;align-items:center;justify-content:center;gap:4px;height:30px;border-radius:9px 9px 0 0;color:#fff;font:700 13px var(--font);background:var(--cc,var(--l0))}
+.col.l1{--cc:var(--l1)} .col.l2{--cc:var(--l2)} .col.l0{--cc:var(--l0)}
+.col .cb{border:1px solid var(--line);border-top:0;border-radius:0 0 9px 9px;overflow:hidden;background:var(--card)}
+.sub{font:700 11px var(--font);color:var(--muted);background:var(--bg);padding:3px 8px;letter-spacing:.02em}
+.sub.duty{color:var(--accent-ink);background:var(--accent-soft)}
+.pc{display:flex;align-items:center;justify-content:space-between;gap:4px;min-height:42px;padding:0 8px;color:var(--ink);text-decoration:none;border-top:1px solid var(--line);font-size:14px;font-weight:600}
+.pc:first-child{border-top:0}
+.pc:active{background:var(--accent-soft)}
+.pc small{display:block;font-size:10px;font-weight:700;color:var(--muted);line-height:1}
+.pc .ic{width:16px;height:16px;color:var(--cc,var(--l0));flex:none}
+.empty1{padding:10px;text-align:center;color:var(--muted);font-size:12px}
 </style>
 </head>
 <body>
