@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.5.0";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -458,7 +458,7 @@ twoTap($("#mPhotos"), "모든 작업의 사진 비우기", () => { S.jobs.forEac
 twoTap($("#mAll"), "작업 전부 지우기", () => { S.jobs = []; S.tray = []; S.sel = null; renderJobs(); });
 $("#mInstall").onclick = async () => { if (!deferredInstall) return; deferredInstall.prompt(); try { await deferredInstall.userChoice; } catch (e) {} deferredInstall = null; $("#menuBack").hidden = true; };
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredInstall = e; });
-[["adjBack", "adjDone"], ["outBack", "outClose"], ["menuBack", "menuClose"], ["histBack", "histClose"]].forEach(([back, btn]) => $("#" + back).addEventListener("click", (e) => { if (e.target.id === back) $("#" + btn).click(); }));
+[["adjBack", "adjDone"], ["outBack", "outClose"], ["menuBack", "menuClose"]].forEach(([back, btn]) => $("#" + back).addEventListener("click", (e) => { if (e.target.id === back) $("#" + btn).click(); }));
 
 /* ---------- 공유 메뉴로 받은 사진 ---------- */
 async function intakeShared() {
@@ -567,31 +567,56 @@ async function renderHist() {
   rows.sort((a, b) => histDateMs(b) - histDateMs(a) || b.ts - a.ts);
 
   const sum = $("#histSum"), list = $("#histList");
-  if (!all.length) { sum.innerHTML = "<b>아직 기록이 없어요</b>사진대지를 만들면 여기에 역·호기·부품·개수가 한 건씩 쌓여요."; list.innerHTML = ""; return; }
-  if (!rows.length) { sum.innerHTML = "<b>해당 조건에 기록이 없어요</b>기간이나 검색어를 바꿔 보세요."; list.innerHTML = ""; return; }
-
+  if (!all.length) { sum.innerHTML = '<div class="empty">아직 기록이 없어요<br>사진대지를 만들면 역·호기·부품·개수가 한 건씩 쌓여요.</div>'; list.innerHTML = ""; return; }
+  if (!rows.length) { sum.innerHTML = '<div class="empty">해당 조건에 기록이 없어요<br>기간이나 검색어를 바꿔 보세요.</div>'; list.innerHTML = ""; return; }
   const total = rows.reduce((n, r) => n + (+r.count || 1), 0);
-  const by = (key) => {
-    const m = new Map();
-    rows.forEach((r) => { const k = key(r) || "(미입력)"; m.set(k, (m.get(k) || 0) + (+r.count || 1)); });
-    return [...m.entries()].sort((a, b) => b[1] - a[1]);
-  };
-  const tags = (arr) => arr.slice(0, 8).map(([k, n]) => `<span class="htag">${esc(k)} ${n}</span>`).join("");
+  const by = (key) => { const m = new Map(); rows.forEach((r) => { const k = key(r) || "(미입력)"; m.set(k, (m.get(k) || 0) + (+r.count || 1)); }); return [...m.entries()].sort((a, b) => b[1] - a[1]); };
+  const bars = (arr) => { const mx = arr[0] ? arr[0][1] : 1; return arr.slice(0, 6).map(([k, n]) => `<div class="brow"><span>${esc(k)}</span><i style="width:${Math.max(6, Math.round((n / mx) * 100))}%"></i><em>${n}</em></div>`).join(""); };
   sum.innerHTML =
-    `<b>${rows.length}건 작업 · 부품 ${total}개</b>` +
-    `<div style="margin-top:4px"><b>역사별</b>${tags(by((r) => r.station))}</div>` +
-    `<div style="margin-top:4px"><b>부품별</b>${tags(by((r) => r.part))}</div>`;
+    `<div class="big"><div><b>${rows.length}</b><small>작업 건</small></div><div><b>${total}</b><small>부품 개수</small></div></div>` +
+    `<div class="bars"><h4>역사별</h4>${bars(by((r) => r.station))}</div>` +
+    `<div class="bars"><h4>부품별</h4>${bars(by((r) => r.part))}</div>`;
   list.innerHTML = rows.map((r) => {
     const d = r.date && /^\d{8}$/.test(r.date) ? `${r.date.slice(4, 6)}/${r.date.slice(6, 8)}` : "";
     const place = [r.station, r.unit ? (r.kind || "") + r.unit : ""].filter(Boolean).join(" ");
     const work = [r.part, (+r.count ? r.count + "개" : "")].filter(Boolean).join(" ");
-    return `<div class="hrow"><span>${esc(place)} — ${esc(work)}${r.status ? " · " + esc(r.status) : ""}</span><span class="hwhen">${d}</span></div>`;
+    return `<div class="hrow2"><div><b>${esc(place || "(역 미입력)")}</b><small>${esc(work)}${r.status ? " · " + esc(r.status) : ""}</small></div><span class="hwhen">${d}</span></div>`;
   }).join("");
 }
-$("#histBtn").onclick = () => { $("#histBack").hidden = false; renderHist(); };
-$("#histClose").onclick = () => ($("#histBack").hidden = true);
 $("#histPeriod").addEventListener("click", (e) => { const b = e.target.closest("[data-p]"); if (!b) return; histState.period = b.dataset.p; [...$("#histPeriod").children].forEach((x) => x.classList.toggle("on", x === b)); renderHist(); });
 $("#histQ").addEventListener("input", (e) => { histState.q = e.target.value; renderHist(); });
+
+
+/* ---------- 탭 · 홈 ---------- */
+const TITLES = { home: "승강업무", photo: "사진대지", hist: "교체 이력" };
+let curTab = "home";
+function showTab(t) {
+  curTab = t;
+  ["home", "photo", "hist"].forEach((k) => { $("#pg" + k[0].toUpperCase() + k.slice(1)).hidden = k !== t; });
+  [...$("#tabs").children].forEach((b) => b.classList.toggle("on", b.dataset.t === t));
+  $("#ttl").textContent = TITLES[t]; $("#actBar").hidden = t !== "photo"; $("#cnt").hidden = t !== "photo";
+  if (t === "photo") renderJobs();
+  if (t === "hist") renderHist();
+  if (t === "home") renderHome();
+  scrollTo(0, 0);
+  try { localStorage.setItem("sdj-tab", t); } catch (e) {}
+}
+$("#tabs").addEventListener("click", (e) => { const b = e.target.closest("[data-t]"); if (b) showTab(b.dataset.t); });
+// 데이터 읽는 곳을 한 군데로 모아 둠: 나중에 사내 서버로 바뀌면 이 함수만 고치면 됨
+async function loadData(name) { const r = await fetch("data/" + name + ".json", { cache: "no-cache" }); if (!r.ok) throw new Error(name); return r.json(); }
+const telHref = (t) => "tel:" + String(t || "").replace(/[^\d+]/g, "");
+const callBtn = (t) => `<a class="call" href="${esc(telHref(t))}"><svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A15 15 0 013 6a2 2 0 012-2z"/></svg>전화</a>`;
+async function renderHome() {
+  let d; try { d = await loadData("sample"); } catch (e) { $("#hWork").innerHTML = '<div class="empty">데이터를 불러오지 못했어요</div>'; return; }
+  const w = d.work || {};
+  $("#hWork").innerHTML = '<div class="sec"><h2>오늘 근무 · 연락</h2></div>' +
+    (w["관리소"] || []).map((p) => `<div class="prow"><div class="who"><b>${esc(p.name)}</b><small>승강관리소 ${esc(p.shift)}</small></div>${callBtn(p.tel)}</div>`).join("") +
+    (w["업체"] || []).map((p) => `<div class="prow"><div class="who"><b>${esc(p.name)}</b><small>${esc(p.line)} ${esc(p.co)} · ${esc(p.kind)}</small></div>${callBtn(p.tel)}</div>`).join("");
+  $("#hPlan").innerHTML = '<div class="sec"><h2>오늘 작업</h2></div>' +
+    ((d.plan || []).map((p) => `<div class="prow"><div class="who"><b>${esc(p.place)}</b><small><span class="pill">${esc(p.kind)}</span>${esc(p.who)}</small></div></div>`).join("") || '<div class="empty">오늘 작업이 없어요</div>');
+  $("#hAcc").innerHTML = '<div class="sec"><h2>최근 사고</h2></div>' +
+    ((d.acc || []).map((p) => `<div class="prow"><div class="who"><b>${esc(p.place)}</b><small><span class="pill ${p.done ? "ok" : "bad"}">${p.done ? "처리 완료" : "처리 중"}</span>${esc(p.date)} · ${esc(p.what)}</small></div></div>`).join("") || '<div class="empty">사고 기록이 없어요</div>');
+}
 
 /* ---------- 시작 ---------- */
 async function init() {
@@ -610,6 +635,8 @@ async function init() {
     navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((r) => r.update()).catch(() => {});
   }
   $("#foot").textContent = `버전 ${APP_VERSION}`;
+  let t0 = "home"; try { t0 = localStorage.getItem("sdj-tab") || "home"; } catch (e) {}
+  showTab(location.search.includes("shared") ? "photo" : (TITLES[t0] ? t0 : "home"));
   autoFlush();
 }
 init();
