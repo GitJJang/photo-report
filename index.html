@@ -424,9 +424,15 @@ mark{background:#ffe58a;color:inherit;border-radius:3px;padding:0 1px}
   </section>
 
   <section class="page" id="pgStock" hidden>
-    <div class="demo">샘플 재고예요. 실제 재고 엑셀을 받으면 연결해요.</div>
+    <details class="panel datamg" id="stockData"><summary><svg class="ic" viewBox="0 0 24 24"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16"/></svg><span id="stockSrc">재고 엑셀 불러오기</span></summary><div class="pb">
+      <div class="demo" id="stockDemo">지금 보이는 재고는 연습용 샘플이에요. 자재 재고 엑셀을 불러오면 바뀌어요.</div>
+      <div class="planbar"><label class="btn primary">재고 엑셀 불러오기<input type="file" accept=".xlsx,.xlsm" id="stockFile"></label><button class="btn sm danger" id="stockClear" hidden style="flex:none">지우기</button></div>
+      <p class="note">자재 시스템에서 받은 재고 엑셀(물품코드·품명·규격·상태·재고수량…)을 그대로 넣으세요. 새 파일을 넣을 때마다 통째로 바뀌고, 지난 파일과 달라진 수량이 표시돼요.</p>
+    </div></details>
     <div class="sumtiles" id="stockF"></div>
-    <div class="search"><svg class="ic" viewBox="0 0 24 24"><path d="M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4"/></svg><input type="text" id="stockQ" placeholder="부품·위치 검색 (예: ㄱㅇㄷㄹㄹ, 롤러, A-2)" autocomplete="off" enterkeyhint="search"></div>
+    <div class="search"><svg class="ic" viewBox="0 0 24 24"><path d="M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4"/></svg><input type="text" id="stockQ" placeholder="부품·규격·코드 검색 (예: ㅂㄹㅇㅋ, 롤러, 6209)" autocomplete="off" enterkeyhint="search"></div>
+    <div class="chips" id="stockChips"></div>
+    <div class="note" id="stockCnt"></div>
     <div class="panel" id="stockList"></div>
   </section>
 

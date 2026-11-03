@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.0.0";
+const APP_VERSION = "2.1.0";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -1013,40 +1013,126 @@ $("#planFile").addEventListener("change", async (e) => {
 });
 
 /* ---------- 재고 ---------- */
-const stockState = { q: "", f: "all" };
-let stockAll = [];
-async function renderStock() {
-  const d = await loadData("sample").catch(() => ({})); stockAll = (d.stock || []).slice();
-  const nZ = stockAll.filter((x) => x.qty === 0).length, nL = stockAll.filter((x) => x.qty > 0 && x.qty <= 2).length;
-  $("#stockF").innerHTML = [["all", "전체 부품", stockAll.length, ""], ["zero", "재고 없음", nZ, "zero"], ["low", "부족 (1~2개)", nL, "low"]].map(([v, l, n, c]) => `<button data-f="${v}" class="${c}${stockState.f === v ? " on" : ""}"><b>${n}</b><small>${l}</small></button>`).join("");
-  const q = stockState.q.toLowerCase().replace(/\s/g, "");
-  let arr = stockAll.map((x, i) => ({ ...x, i }));
-  if (q) arr = arr.filter((x) => hasText((x.n + x.sp + (x.loc || "")).toLowerCase().replace(/\s/g, ""), q));
-  if (stockState.f === "zero") arr = arr.filter((x) => x.qty === 0); else if (stockState.f === "low") arr = arr.filter((x) => x.qty > 0 && x.qty <= 2);
-  arr.sort((a, b) => a.qty - b.qty || a.n.localeCompare(b.n, "ko"));
-  $("#stockList").innerHTML = arr.map((x) => {
-    const cc = x.qty === 0 ? "zero" : x.qty <= 2 ? "low" : "";
-    let alt = "";
-    if (x.qty <= 2) alt = x.compat && x.compat.length ? `<div class="alt"><b>대체 가능</b> · ${x.compat.map((c) => `${esc(c.n)} ${esc(c.sp)} <b>${c.qty}개</b>`).join(", ")}</div>` : (x.qty === 0 ? '<div class="alt none"><b>대체 부품 없음</b> · 구매 필요</div>' : "");
-    return `<div class="srow ${cc}" data-i="${x.i}"><div class="sm"><b>${esc(x.n)}</b><div class="mt">${esc(x.sp)} · 위치 ${esc(x.loc || "-")}</div>${alt}</div><div class="q"><b>${x.qty}</b><small class="${cc ? "" : "okc"}">${cc === "zero" ? "재고 없음" : cc === "low" ? "부족" : "정상"}</small></div></div>`;
-  }).join("") || `<div class="empty">${IC.box}찾는 부품이 없어요</div>`;
+/* ---------- 재고: 자재 엑셀(물품코드·품명·규격·상태·재고수량…)을 매번 새로 불러와 바꿔 넣음 ---------- */
+const stockState = { q: "", f: "all", st: "all", mv: "", lim: 150 };
+const stDisp = (name) => { const p = String(name || "").split(",").map((x) => x.trim()).filter(Boolean); return p.length > 1 ? p.slice(1).reverse().join("") + p[0] : String(name || "").trim(); };
+const stKey = (x) => (x.code ? x.code : x.n + "/" + (x.sp || "")) + "|" + (x.st || "");
+const num = (v) => { const n = parseFloat(String(v == null ? "" : v).replace(/,/g, "")); return isNaN(n) ? null : n; };
+function parseStock(grids) {
+  const C = { code: /^(물품코드|자재코드|코드)/, n: /^(품명|부품명|자재명|품목명?)$/, sp: /^(규격|사양|모델)/, unit: /^단위/, st: /^상태/, base: /^기초수량/, inq: /^(수입수량|입고수량|입고)/, outq: /^(불출수량|출고수량|출고)/, qty: /^(재고수량|현재고|재고|수량)$/, rsv: /^예약수량/, prop: /^적정재고/, safe: /^안전재고/, loc: /^(보관장소|보관위치|위치|로케이션)/, compat: /^(대체|호환)/ };
+  const items = [];
+  grids.forEach(({ grid }) => {
+    const rows = [...grid.keys()].sort((a, b) => a - b);
+    for (const r of rows) {
+      const m = {}; grid.get(r).forEach((v, c) => { const L = String(v).replace(/\s/g, ""); for (const k in C) if (m[k] === undefined && C[k].test(L)) m[k] = c; });
+      if (m.n === undefined || m.qty === undefined) continue;
+      for (const rr of rows) {
+        if (rr <= r) continue; const row = grid.get(rr), g = (k) => (m[k] === undefined ? "" : String(row.get(m[k]) || "").trim());
+        const raw = g("n"), q = num(g("qty"));
+        if (!raw || q === null || /합\s*계/.test(g("st") + raw)) continue;
+        items.push({ code: g("code"), raw, n: stDisp(raw), sp: g("sp"), unit: g("unit"), st: g("st"), base: num(g("base")), inq: num(g("inq")), outq: num(g("outq")), qty: q, rsv: num(g("rsv")), th: Math.max(num(g("prop")) || 0, num(g("safe")) || 0), loc: g("loc"), compat: g("compat") });
+      }
+      break;
+    }
+  });
+  if (!items.length) throw new Error("재고 표를 찾지 못했어요 (품명·재고수량 칸이 필요해요)");
+  return items;
 }
-$("#stockQ").addEventListener("input", (e) => { stockState.q = e.target.value; renderStock(); });
-$("#stockF").addEventListener("click", (e) => { const b = e.target.closest("[data-f]"); if (b) { stockState.f = b.dataset.f; renderStock(); } });
+async function getStock() {
+  let st = null; try { st = await idbGet("stock"); } catch (e) {}
+  if (st && st.items && st.items.length) return { ...st, demo: false };
+  const d = await loadData("sample").catch(() => ({}));
+  return { demo: true, items: (d.stock || []).map((x) => ({ ...x, raw: x.n, st: "", sample: true })), prev: null };
+}
+const stLow = (x) => x.qty > 0 && (x.th > 0 ? x.qty < x.th : x.sample ? x.qty <= 2 : x.qty === 1);
+function stockView(S0) {
+  const items = S0.items.map((x, i) => ({ ...x, i, key: stKey(x) }));
+  const prev = S0.prev || null, cur = new Set(items.map((x) => x.key));
+  if (prev) { items.forEach((x) => { const p = prev[x.key]; x.delta = p ? x.qty - p.qty : null; x.isNew = !p; });
+    Object.entries(prev).forEach(([k, p]) => { if (!cur.has(k)) items.push({ ...p, qty: 0, gone: true, delta: -p.qty, key: k, i: items.length }); }); }
+  const byCode = {}; items.forEach((x) => { if (x.code) (byCode[x.code] = byCode[x.code] || []).push(x); });
+  items.forEach((x) => {
+    let alt = x.compatList ? x.compatList.slice() : (x.compat && Array.isArray(x.compat) ? x.compat.slice() : []);
+    if (x.code) (byCode[x.code] || []).forEach((y) => { if (y !== x && y.qty > 0) alt.push({ n: y.n, sp: (y.st || "") + (y.sp ? " " + y.sp : ""), qty: y.qty }); });
+    if (typeof x.compat === "string" && x.compat) x.compat.split(/[,/·\n]+/).map((s) => s.trim()).filter(Boolean).forEach((nm) => { const y = items.find((z) => z !== x && (z.n === nm || z.raw === nm || z.code === nm) && z.qty > 0); alt.push(y ? { n: y.n, sp: y.sp, qty: y.qty } : { n: nm, sp: "", qty: null }); });
+    x.alt = alt;
+  });
+  return items;
+}
+let stockItems = [];
+async function renderStock() {
+  const S0 = await getStock(); stockItems = stockView(S0);
+  $("#stockDemo").hidden = !S0.demo; $("#stockClear").hidden = S0.demo;
+  if (!stockInit) { stockInit = true; $("#stockData").open = S0.demo; }
+  const when = S0.ts ? new Date(S0.ts) : null;
+  $("#stockSrc").innerHTML = S0.demo ? '재고 엑셀 불러오기 <span class="tag smp">샘플 재고 보는 중</span>' : `${esc(S0.name || "재고 파일")} <span class="tag ok">${S0.items.length}품목${when ? ` · ${when.getMonth() + 1}/${when.getDate()} ${pad(when.getHours())}:${pad(when.getMinutes())} 기준` : ""}</span>`;
+  const nZ = stockItems.filter((x) => x.qty === 0).length, nL = stockItems.filter(stLow).length;
+  $("#stockF").innerHTML = [["all", "전체 품목", stockItems.length, ""], ["zero", S0.demo ? "재고 없음" : "재고 없음·소진", nZ, "zero"], ["low", S0.demo ? "부족 (1~2개)" : "부족·1개 남음", nL, "low"]].map(([v, l, n, c]) => `<button data-f="${v}" class="${c}${stockState.f === v ? " on" : ""}"><b>${n}</b><small>${l}</small></button>`).join("");
+  const hasSt = stockItems.some((x) => x.st), hasMv = stockItems.some((x) => x.outq > 0 || x.inq > 0), hasD = stockItems.some((x) => x.delta);
+  const chip = (attr, v, l, on) => `<button data-${attr}="${v}"${on ? ' class="on"' : ""}>${l}</button>`;
+  $("#stockChips").innerHTML = (hasSt ? chip("st", "all", "전체", stockState.st === "all") + chip("st", "신품", "신품", stockState.st === "신품") + chip("st", "중고품", "중고품", stockState.st === "중고품") : "") +
+    (hasMv || hasD ? '<span class="sep"></span>' : "") + (hasMv ? chip("mv", "out", "불출 있음", stockState.mv === "out") + chip("mv", "in", "입고 있음", stockState.mv === "in") : "") + (hasD ? chip("mv", "chg", "지난번보다 바뀐 것", stockState.mv === "chg") : "");
+  $("#stockChips").hidden = !$("#stockChips").innerHTML;
+  const q = stockState.q.toLowerCase().replace(/\s/g, "");
+  let arr = stockItems;
+  if (q) arr = arr.filter((x) => hasText([x.n, x.raw, x.sp, x.loc, x.code].join(" ").toLowerCase().replace(/\s/g, ""), q));
+  if (stockState.f === "zero") arr = arr.filter((x) => x.qty === 0); else if (stockState.f === "low") arr = arr.filter(stLow);
+  if (stockState.st !== "all") arr = arr.filter((x) => x.st === stockState.st);
+  if (stockState.mv === "out") arr = arr.filter((x) => x.outq > 0); else if (stockState.mv === "in") arr = arr.filter((x) => x.inq > 0); else if (stockState.mv === "chg") arr = arr.filter((x) => x.delta);
+  const rank = (x) => (x.qty === 0 ? 0 : stLow(x) ? 1 : 2);
+  arr = arr.slice().sort((a, b) => rank(a) - rank(b) || a.n.localeCompare(b.n, "ko") || (a.sp || "").localeCompare(b.sp || "", "ko"));
+  const shown = arr.slice(0, stockState.lim);
+  $("#stockCnt").textContent = `${arr.length}품목${arr.length > shown.length ? ` 중 ${shown.length}개 표시` : ""}`;
+  $("#stockList").innerHTML = shown.map((x) => {
+    const cc = x.qty === 0 ? "zero" : stLow(x) ? "low" : "";
+    let alt = "";
+    if (cc) alt = x.alt.length ? `<div class="alt"><b>대체 가능</b> · ${x.alt.slice(0, 2).map((c) => `${esc(c.n)} ${esc(c.sp || "")}${c.qty !== null && c.qty !== undefined ? ` <b>${c.qty}개</b>` : ""}`).join(", ")}</div>` : (x.qty === 0 ? '<div class="alt none"><b>대체 부품 없음</b> · 구매 필요</div>' : "");
+    const dl = x.gone ? '<span class="tag bad">이번 파일에 없음</span>' : x.isNew && S0.prev ? '<span class="tag">새로 생김</span>' : x.delta ? `<span class="tag ${x.delta < 0 ? "warn" : "ok"}">지난번 ${x.delta > 0 ? "+" : ""}${x.delta}</span>` : "";
+    const meta = [x.sp, x.st, x.loc ? "위치 " + x.loc : ""].filter(Boolean).map(esc).join(" · ");
+    return `<div class="srow ${cc}" data-i="${x.i}"><div class="sm"><b>${esc(x.n)}</b><div class="mt">${meta || "&nbsp;"}</div>${dl ? `<div style="margin-top:5px">${dl}</div>` : ""}${alt}</div><div class="q"><b>${x.qty}</b><small class="${cc ? "" : "okc"}">${cc === "zero" ? "재고 없음" : cc === "low" ? "부족" : (x.unit || "개")}</small></div></div>`;
+  }).join("") + (arr.length > shown.length ? `<button class="btn ghost wide" id="stockMore" style="border:0;border-top:1px solid var(--line);border-radius:0">${Math.min(150, arr.length - shown.length)}개 더 보기</button>` : "") || `<div class="empty">${IC.box}찾는 부품이 없어요</div>`;
+}
+let stockInit = false;
+$("#stockQ").addEventListener("input", (e) => { stockState.q = e.target.value; stockState.lim = 150; renderStock(); });
+$("#stockF").addEventListener("click", (e) => { const b = e.target.closest("[data-f]"); if (b) { stockState.f = b.dataset.f; stockState.lim = 150; renderStock(); } });
+$("#stockChips").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; if (b.dataset.st) stockState.st = b.dataset.st; if (b.dataset.mv) stockState.mv = stockState.mv === b.dataset.mv ? "" : b.dataset.mv; stockState.lim = 150; renderStock(); });
+$("#stockFile").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try {
+    const items = parseStock(await loadGrids(await f.arrayBuffer()));
+    const old = await idbGet("stock").catch(() => null), prev = {};
+    if (old && old.items) old.items.forEach((x) => { prev[stKey(x)] = { n: x.n, raw: x.raw, sp: x.sp, st: x.st, code: x.code, unit: x.unit, qty: x.qty }; });
+    await idbSet("stock", { items, ts: Date.now(), name: f.name.replace(/\.(xlsx|xlsm)$/i, ""), prev: old && old.items ? prev : null });
+    stockParts(items);
+    let msg = `${items.length}품목 불러왔어요`;
+    if (old && old.items) { const ch = items.filter((x) => prev[stKey(x)] && prev[stKey(x)].qty !== x.qty).length, nk = new Set(items.map(stKey)), gone = Object.keys(prev).filter((k) => !nk.has(k)).length; msg += `\n지난번보다 바뀜 ${ch} · 없어짐 ${gone}`; }
+    toast(msg, 5000); stockState.lim = 150; renderStock();
+  } catch (err) { toast("불러오지 못했어요: " + err.message, 6000); }
+});
+$("#stockClear").onclick = async () => { if (!confirm("불러온 재고를 지우고 샘플로 되돌릴까요?")) return; await idbSet("stock", {}); renderStock(); };
+// 사진대지 '부품 찾기'도 최신 재고 목록을 같이 쓰게
+function stockParts(items) {
+  const seen = new Set(PARTS.map((p) => p.n + "|" + p.sp));
+  items.forEach((x) => { const k = x.n + "|" + (x.sp || ""); if (seen.has(k)) return; seen.add(k); PARTS.push({ n: x.n, sp: x.sp || "", o: x.raw || "", k: (x.n + (x.sp || "") + (x.raw || "")).toLowerCase().replace(/\s/g, ""), nk: x.n.replace(/\s/g, "") }); });
+}
 $("#stockList").addEventListener("click", async (e) => {
-  const r = e.target.closest("[data-i]"); if (!r) return; const x = stockAll[+r.dataset.i]; if (!x) return;
-  const st = x.qty === 0 ? ["bad", "재고 없음"] : x.qty <= 2 ? ["warn", "부족"] : ["ok", "정상"];
+  if (e.target.id === "stockMore") { stockState.lim += 150; return renderStock(); }
+  const r = e.target.closest("[data-i]"); if (!r) return; const x = stockItems.find((y) => y.i === +r.dataset.i); if (!x) return;
+  const st = x.qty === 0 ? ["bad", x.gone ? "이번 파일에 없음" : "재고 없음"] : stLow(x) ? ["warn", "부족"] : ["ok", "정상"];
   const hist = ((await idbGet("history").catch(() => null)) || []).filter((h) => h.part && (h.part.includes(x.n) || x.n.includes(h.part))).slice(-8).reverse();
-  $("#stockDet").innerHTML = `<h3>${esc(x.n)}</h3><div class="note" style="margin:0">${esc(x.sp)}</div>
-    <div class="bigq"><b style="color:var(--${st[0]})">${x.qty}</b><span>개</span><span class="tag ${st[0]}">${st[1]}</span></div>
-    <dl class="dl"><dt>규격</dt><dd>${esc(x.sp || "-")}</dd><dt>보관 위치</dt><dd>${esc(x.loc || "-")}</dd></dl>
-    <div class="hsec">대체 가능 부품</div>${x.compat && x.compat.length ? `<div class="mini">${x.compat.map((c) => `<div><span>${esc(c.n)} · ${esc(c.sp)}</span><b>${c.qty}개</b></div>`).join("")}</div>` : '<div class="note">등록된 대체 부품이 없어요</div>'}
-    <div class="hsec">최근 교체 기록 (이 폰에서 만든 사진대지)</div>${hist.length ? `<div class="mini">${hist.map((h) => `<div><span>${esc((h.date || "").slice(4, 6))}/${esc((h.date || "").slice(6, 8))} · ${esc([h.station, h.unit ? (h.kind || "") + h.unit : ""].filter(Boolean).join(" "))}</span><b>${h.count || 1}개</b></div>`).join("")}</div>` : '<div class="note">아직 기록이 없어요</div>'}
-    <div class="hsec">입고·출고 내역</div><div class="note">실제 재고 엑셀을 연결하면 여기에 입고·출고·사용 내역이 쌓여요.</div>`;
+  const row = (l, v) => (v === null || v === undefined || v === "" ? "" : `<div><span>${l}</span><b>${esc(String(v))}</b></div>`);
+  const io = [row("기초수량", x.base), row("입고(수입)", x.inq), row("불출", x.outq), row("예약", x.rsv), row("현재 재고", x.qty), x.delta !== null && x.delta !== undefined ? row("지난번 파일 대비", (x.delta > 0 ? "+" : "") + x.delta) : ""].join("");
+  $("#stockDet").innerHTML = `<h3>${esc(x.n)}</h3><div class="note" style="margin:0">${esc(x.raw && x.raw !== x.n ? x.raw : "")}</div>
+    <div class="bigq"><b style="color:var(--${st[0]})">${x.qty}</b><span>${esc(x.unit || "개")}</span><span class="tag ${st[0]}">${st[1]}</span></div>
+    <dl class="dl">${x.code ? `<dt>물품코드</dt><dd>${esc(x.code)}</dd>` : ""}<dt>규격</dt><dd>${esc(x.sp || "-")}</dd>${x.st ? `<dt>상태</dt><dd>${esc(x.st)}</dd>` : ""}<dt>보관 위치</dt><dd>${esc(x.loc || "-")}</dd>${x.th ? `<dt>적정재고</dt><dd>${x.th}</dd>` : ""}</dl>
+    <div class="hsec">대체 가능 부품</div>${x.alt.length ? `<div class="mini">${x.alt.map((c) => `<div><span>${esc(c.n)} · ${esc(c.sp || "")}</span><b>${c.qty !== null && c.qty !== undefined ? c.qty + "개" : "재고 확인"}</b></div>`).join("")}</div>` : '<div class="note">같은 물품코드의 다른 상태(신품·중고품)나 지정된 호환 부품이 없어요</div>'}
+    <div class="hsec">입고·출고 (불러온 파일 기준)</div>${io ? `<div class="mini">${io}</div>` : '<div class="note">파일에 입고·불출 칸이 없어요</div>'}
+    <div class="hsec">최근 교체 기록 (이 폰에서 만든 사진대지)</div>${hist.length ? `<div class="mini">${hist.map((h) => `<div><span>${esc((h.date || "").slice(4, 6))}/${esc((h.date || "").slice(6, 8))} · ${esc([h.station, h.unit ? (h.kind || "") + h.unit : ""].filter(Boolean).join(" "))}</span><b>${h.count || 1}개</b></div>`).join("")}</div>` : '<div class="note">아직 기록이 없어요</div>'}`;
   $("#stockBack").hidden = false;
 });
 $("#stockClose").onclick = () => ($("#stockBack").hidden = true);
 $("#stockBack").addEventListener("click", (e) => { if (e.target.id === "stockBack") $("#stockClose").click(); });
+
 
 
 /* ---------- 현황(사고 · 장기 미수선 · 교체 이력) ---------- */
@@ -1258,6 +1344,7 @@ async function renderPhotoRecent() {
 async function init() {
   try { const r = await fetch("data/stations.json"); if (r.ok) Object.assign(DATA, await r.json()); } catch (e) {}
   try { const r = await fetch("data/parts.json"); if (r.ok) { const d = await r.json(); PARTS = d.items.map(([n, sp, o]) => ({ n, sp, o, k: (n + sp + o).toLowerCase().replace(/\s/g, ""), nk: n.replace(/\s/g, "") })); } } catch (e) {}
+  try { const sk = await idbGet("stock"); if (sk && sk.items) stockParts(sk.items); } catch (e) {}
   try { const st = await idbGet("state"); if (st) { S.jobs = (st.jobs || []).map((j) => { const k = { layout: "v", partSpec: "", ...j }; if (k.part === "__custom") k.part = k.partCustom || ""; return k; }); S.tray = st.tray || []; S.seq = st.seq || 0; } } catch (e) {}
   renderJobs();
   try {
