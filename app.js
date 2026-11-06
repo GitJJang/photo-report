@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.8";
+const APP_VERSION = "2.1.9";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -1249,8 +1249,8 @@ function suggest(field) {
   const el = A({ what: "aWhat", cause: "aCause", action: "aAct" }[field]), q = nz(el.value);
   let list = phraseList(field);
   if (q) list = list.filter((p) => nz(p) !== q && hasText(nz(p), q));
-  else if (field === "cause") list = rankBy(list, A("aWhat").value);
-  else if (field === "action") { const c = A("aCause").value.trim(), pr = (PH && PH[accForm.kind] && PH[accForm.kind].pair && PH[accForm.kind].pair[c]) || []; list = [...pr, ...rankBy(list, c || A("aWhat").value).filter((p) => !pr.includes(p))]; }
+  else if (field === "cause") { const wp = (PH && PH[accForm.kind] && PH[accForm.kind].wpair && PH[accForm.kind].wpair[nz(A("aWhat").value)]) || []; list = [...wp, ...rankBy(list, A("aWhat").value).filter((p) => !wp.includes(p))]; }
+  else if (field === "action") { const c = A("aCause").value.trim(), pr = (PH && PH[accForm.kind] && PH[accForm.kind].pair && PH[accForm.kind].pair[nz(c)]) || []; list = [...pr, ...rankBy(list, c || A("aWhat").value).filter((p) => !pr.includes(p))]; }
   return list.slice(0, q ? 6 : 5);
 }
 const hi = (p, q) => { if (!q) return esc(p); const i = p.toLowerCase().indexOf(q.toLowerCase()); return i < 0 ? esc(p) : esc(p.slice(0, i)) + "<b>" + esc(p.slice(i, i + q.length)) + "</b>" + esc(p.slice(i + q.length)); };
@@ -1260,7 +1260,7 @@ function sgShow(field) {
   const map = { what: ["aWhat", "sgWhat"], cause: ["aCause", "sgCause"], action: ["aAct", "sgAct"] };
   if (map[field]) {
     const [inp, box] = map[field], q = A(inp).value.trim(), arr = suggest(field);
-    A(box).innerHTML = arr.length ? `<span class="sl">${q ? "추천" : field === "action" && A("aCause").value.trim() ? "자주 한 조치" : "자주 쓰는 말"}</span>` + arr.map((p) => `<button type="button" data-sg="${inp}" data-v="${esc(p)}">${hi(p, q)}</button>`).join("") : "";
+    A(box).innerHTML = arr.length ? `<span class="sl">${q ? "추천" : field === "action" && A("aCause").value.trim() ? "이 원인에 자주 한 조치" : field === "cause" && A("aWhat").value.trim() ? "이 현상에 자주 나온 원인" : "자주 쓰는 말"}</span>` + arr.map((p) => `<button type="button" data-sg="${inp}" data-v="${esc(p)}">${hi(p, q)}</button>`).join("") : "";
     return;
   }
   if (field === "part") {
