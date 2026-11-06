@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.7";
+const APP_VERSION = "2.1.8";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -1180,7 +1180,7 @@ function accTLm(a) {
 const accHtml = (a, mini) => {
   const open = !a.done;
   return `<div class="acard${open ? " open" : ""}${mini ? " mini2" : ""}"${a.id ? ` data-id="${a.id}"` : ""}><div class="top"><b>${esc(accPlace(a) || "(역 미입력)")}</b><span class="when">${dLabel(itemDate(a))}</span></div>` +
-    `<div class="tags">${a.type ? `<span class="tag">${esc(a.type)}</span>` : ""}${a.ftype ? `<span class="tag">${esc(a.ftype)}</span>` : ""}<span class="tag ${open ? "bad" : "ok"}">${open ? "처리 중" : "처리 완료"}</span>${a.nonrun && a.nonrun !== "없음" ? `<span class="tag warn">비운행 ${esc(a.nonrun)}</span>` : ""}</div>` +
+    `<div class="tags">${a.type ? `<span class="tag">${esc(a.type)}</span>` : ""}<span class="tag ${open ? "bad" : "ok"}">${open ? "처리 중" : "처리 완료"}</span>${a.nonrun && a.nonrun !== "없음" ? `<span class="tag warn">비운행 ${esc(a.nonrun)}</span>` : ""}</div>` +
     (a.what ? `<div class="what">${esc(a.what)}</div>` : "") + (a.cause && !mini ? `<div class="act">원인 · ${esc(a.cause)}</div>` : "") + (a.action && !mini ? `<div class="act">▸ ${nl(a.action)}${a.part ? ` <span class="tag">교체 ${esc(a.part)}</span>` : ""}</div>` : "") + (mini ? accTLm(a) : accTL(a)) + (a.note && !mini ? `<div class="nt">${nl(a.note)}</div>` : "") + "</div>";
 };
 
@@ -1231,8 +1231,8 @@ function guessFt(kind, text) {
   return "";
 }
 const accTxt = () => [A("aWhat").value, A("aCause").value, A("aAct").value].join(" ");
-function renderFt() { A("aFt").innerHTML = FT[accForm.kind].map((f) => `<button type="button" data-ft="${f}" class="${accForm.ft === f ? "on" : ""}">${f}</button>`).join(""); }
-A("aFt").addEventListener("click", (e) => { const b = e.target.closest("[data-ft]"); if (!b) return; accForm.ft = accForm.ft === b.dataset.ft ? "" : b.dataset.ft; accForm.ftM = true; renderFt(); });
+function renderFt() { if (!A("aFt")) return; A("aFt").innerHTML = FT[accForm.kind].map((f) => `<button type="button" data-ft="${f}" class="${accForm.ft === f ? "on" : ""}">${f}</button>`).join(""); }
+if (A("aFt")) A("aFt").addEventListener("click", (e) => { const b = e.target.closest("[data-ft]"); if (!b) return; accForm.ft = accForm.ft === b.dataset.ft ? "" : b.dataset.ft; accForm.ftM = true; renderFt(); });
 const nz = (x) => String(x || "").toLowerCase().replace(/\s/g, "");
 const toks = (x) => String(x || "").split(/[\s,·()/]+/).filter((w) => w.length >= 2);
 let accMine = [];
@@ -1297,7 +1297,6 @@ document.querySelectorAll("#accBack .sugg").forEach((b) => {
 });
 function autoFromText() {
   const t = accTxt();
-  if (!accForm.ftM) { accForm.ft = guessFt(accForm.kind, t); renderFt(); }
   if (!accForm.tyM) { const ty = /전도|넘어/.test(t) ? "전도" : /갇힘|갇혔|갇혀/.test(t) ? "갇힘" : "고장"; if (ty !== accForm.type) { accForm.type = ty; segSet("aType", ty); } }
 }
 function autoNon() {
@@ -1333,7 +1332,7 @@ $("#accBack").addEventListener("click", (e) => {
 function accRead() {
   const stn = A("aStn").value === "__c" ? A("aStnC").value.trim() : A("aStn").value;
   return { id: accForm.id || Date.now(), date: A("aDate").value || todayKey(), line: A("aLine").value, station: stn, kind: accForm.kind, unit: A("aUnit").value, type: accForm.type,
-    what: A("aWhat").value.trim(), cause: A("aCause").value.trim(), action: A("aAct").value.trim(), part: A("aPart").value.trim(), worker: A("aWorker").value.trim(), ftype: accForm.ft || "", nonrun: accForm.non === "있음" ? (A("aNonT").value.trim() || "있음") : "없음",
+    what: A("aWhat").value.trim(), cause: A("aCause").value.trim(), action: A("aAct").value.trim(), part: A("aPart").value.trim(), worker: A("aWorker").value.trim(), ftype: "", nonrun: accForm.non === "있음" ? (A("aNonT").value.trim() || "있음") : "없음",
     tRecv: normT(A("aRecv").value), tArr: normT(A("aArr").value), tDone: normT(A("aDoneT").value), note: A("aNote").value.trim(), done: !!accForm.done };
 }
 function accText(r) {
