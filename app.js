@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.6";
+const APP_VERSION = "2.1.7";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -746,7 +746,7 @@ async function renderHome() {
     const S = ct.data.staff, groups = [];
     (S.people || []).forEach((p) => { let g = groups.find((x) => x.n === (p.grp || "관리소")); if (!g) groups.push((g = { n: p.grp || "관리소", a: [] })); g.a.push(p); });
     const nums = (S.gen || S.in) ? `<div class="cnum">${S.gen ? `<a href="${esc(telHref(S.gen))}"><small>일반전화 · 누르면 연결</small>${esc(S.gen)}</a>` : ""}${S.in ? `<span><small>사내전화</small>${esc(S.in)}</span>` : ""}</div>` : "";
-    body = nums + groups.map((g) => `<div class="sub">${esc(g.n)} ${g.a.length}명</div>${grid(g.a, g.n.includes("2호선") && !g.n.includes("1") ? "l2x" : g.n.includes("1") && !g.n.includes("2") ? "l1x" : "l0x")}`).join("");
+    body = nums + '<div class="staffB">' + groups.map((g) => `<div class="sub">${esc(g.n)} ${g.a.length}명</div>${grid(g.a, "l0x")}`).join("") + "</div>";
   } else if (homeCt === "staff") {
     const st = (d.work && d.work.staff) || {};
     body = ["통상", "1호선", "2호선"].map((k) => `<div class="sub"><span class="lt ${lineCls[k] || ""}"></span>${k === "통상" ? "통상 근무" : k + " 담당"} ${(st[k] || []).length}명</div>${grid(st[k], cls[k])}`).join("") + '<div class="note" style="padding:0 14px 10px">관리소 직원 명단은 아직 샘플이에요. 실제 명단을 받으면 바꿔 넣어요.</div>';
