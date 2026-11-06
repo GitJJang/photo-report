@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.13";
+const APP_VERSION = "2.1.14";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -880,7 +880,7 @@ $("#hWork").addEventListener("click", (e) => {
 });
 $("#hAcc").addEventListener("click", async (e) => {
   const it = e.target.closest("[data-id]"); if (!it) return;
-  const all = (await idbGet("acc").catch(() => null)) || []; const r = all.find((x) => x.id === +it.dataset.id); if (r) openAcc(r);
+  const all = await accAllRaw(); const r = all.find((x) => x.id === +it.dataset.id); if (r) openAcc(r);
 });
 /* 키보드가 열리면 입력칸이 가려지지 않게 */
 document.addEventListener("focusin", (e) => {
@@ -1151,9 +1151,15 @@ $("#stockBack").addEventListener("click", (e) => { if (e.target.id === "stockBac
 
 /* ---------- 현황(사고 · 장기 미수선 · 교체 이력) ---------- */
 const accState = { f: "all", q: "", p: "month", k: "all" };
+async function accAllRaw() {
+  let saved; try { saved = await idbGet("acc"); } catch (e) { saved = undefined; }
+  if (Array.isArray(saved)) return saved;
+  const bi = await loadData("acc").catch(() => null);
+  return bi && bi.items ? bi.items.slice() : [];
+}
 async function getAccAll() {
-  let saved = []; try { saved = (await idbGet("acc")) || []; } catch (e) {}
-  if (saved.length) return { list: saved, demo: false };
+  let saved; try { saved = await idbGet("acc"); } catch (e) { saved = undefined; }
+  if (Array.isArray(saved)) return { list: saved, demo: false };
   const bi = await loadData("acc").catch(() => null);
   if (bi && bi.items && bi.items.length) return { list: bi.items, demo: false, builtin: true };
   const d = await loadData("sample").catch(() => ({}));
@@ -1371,7 +1377,7 @@ function parseKakao(raw) {
     return r;
   });
 }
-async function accSaveRec(r) { const all = (await idbGet("acc").catch(() => null)) || []; const i = all.findIndex((x) => x.id === r.id); if (i >= 0) all[i] = r; else all.push(r); await idbSet("acc", all); }
+async function accSaveRec(r) { const all = await accAllRaw(); const i = all.findIndex((x) => x.id === r.id); if (i >= 0) all[i] = r; else all.push(r); await idbSet("acc", all); }
 function openAcc(r) { accFillUnits(); loadData("phrases").then((d) => (PH = d)).catch(() => {}); let ll = "1호선"; try { ll = localStorage.getItem("sdj-accline") || ll; } catch (e) {} accFill(r || { date: todayKey(), line: ll, kind: "EL", type: "고장", done: 0 }); A("accPaste").value = ""; A("accBack").hidden = false; }
 $("#accNew").onclick = () => openAcc(null);
 $("#aClose").onclick = () => (A("accBack").hidden = true);
@@ -1399,8 +1405,8 @@ A("aSend").onclick = () => {
   sp.then(() => { A("accBack").hidden = true; toast("보냈어요. 저장도 됐어요"); }).catch((e) => { toast(e && e.name === "AbortError" ? "보내기를 취소했어요 (저장은 됐어요)" : "보내지 못했어요: " + (e && e.message), 5000); }).finally(() => saving.then(renderStat));
 };
 A("aCopy").onclick = async () => { try { await navigator.clipboard.writeText(accText(accRead())); toast("복사했어요. 단톡방에 붙여넣으세요"); } catch (e) { toast("복사하지 못했어요"); } };
-A("aDel").onclick = async () => { if (!confirm("이 기록을 지울까요?")) return; const all = ((await idbGet("acc").catch(() => null)) || []).filter((x) => x.id !== accForm.id); await idbSet("acc", all); A("accBack").hidden = true; renderStat(); };
-$("#accList").addEventListener("click", async (e) => { const it = e.target.closest("[data-id]"); if (!it) return; const all = (await idbGet("acc").catch(() => null)) || []; const r = all.find((x) => x.id === +it.dataset.id); if (r) openAcc(r); });
+A("aDel").onclick = async () => { if (!confirm("이 기록을 지울까요?")) return; const all = (await accAllRaw()).filter((x) => x.id !== accForm.id); await idbSet("acc", all); A("accBack").hidden = true; toast("지웠어요"); renderStat(); };
+$("#accList").addEventListener("click", async (e) => { const it = e.target.closest("[data-id]"); if (!it) return; const all = await accAllRaw(); const r = all.find((x) => x.id === +it.dataset.id); if (r) openAcc(r); });
 $("#accQ").addEventListener("input", (e) => { accState.q = e.target.value; renderStat(); });
 async function renderStat() {
   [...$("#statSeg").children].forEach((b) => b.classList.toggle("on", b.dataset.s === statSeg));
