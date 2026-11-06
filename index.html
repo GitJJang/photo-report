@@ -163,6 +163,9 @@ mark{background:#ffe58a;color:inherit;border-radius:3px;padding:0 1px}
 .ctabs{display:flex;gap:6px;padding:0 14px 10px;overflow-x:auto;scrollbar-width:none}
 .ctabs button{flex:none;height:36px;padding:0 12px;border-radius:999px;border:1px solid var(--line2);background:var(--card);color:var(--ink2);font:800 13px var(--font);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 .ctabs button .lt{width:9px;height:9px}
+.fhint{font-weight:500;color:var(--muted);font-size:11px;margin-left:4px}
+.fchips{display:flex;flex-wrap:wrap;gap:6px}.fchips button{height:32px;padding:0 11px;border-radius:999px;border:1px solid var(--line2);background:var(--card);color:var(--ink2);font:700 12.5px var(--font);cursor:pointer}.fchips button.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.sugg{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}.sugg:empty{display:none}.sugg button{min-height:30px;padding:5px 10px;border-radius:10px;border:1px dashed var(--line2);background:var(--navy-soft);color:var(--navy2);font:600 12.5px var(--font);text-align:left;cursor:pointer;max-width:100%}.sugg button b{color:var(--navy);font-weight:800}.sugg .sl{font-size:11px;color:var(--muted);align-self:center;margin-right:2px}
 .ctabs button.on{background:var(--navy);border-color:var(--navy);color:#fff}
 .ctabs button.staffT{border:2px solid var(--navy);color:var(--navy);font-weight:900}.ctabs button.staffT .ic{width:16px;height:16px}.ctabs button.staffT.on{color:#fff}
 .cnum{display:flex;gap:8px;padding:0 14px 10px}
@@ -552,8 +555,11 @@ mark{background:#ffe58a;color:inherit;border-radius:3px;padding:0 1px}
     <div class="grid2" style="margin-top:8px"><div class="seg" id="aKind"><button data-v="EL" class="on">EL</button><button data-v="ES">ES</button></div><select id="aUnit"></select></div>
     <label class="f">종류</label>
     <div class="seg" id="aType"><button data-v="고장" class="on">고장</button><button data-v="전도">전도</button><button data-v="갇힘">갇힘</button><button data-v="정지">정지</button></div>
-    <label class="f">현상 (무슨 일이었나)</label><textarea id="aWhat" rows="2" placeholder="예: 승장도어씰 이물질로 인한 도어닫힘불량"></textarea>
-    <label class="f">점검·조치 내용</label><textarea id="aAct" rows="3" placeholder="예: 이물질 제거 및 운행상태 점검 후 가동"></textarea>
+    <label class="f">장애유형 <span class="fhint">내용을 쓰면 자동으로 골라져요</span></label><div class="fchips" id="aFt"></div>
+    <label class="f">현상 (무슨 일이었나)</label><textarea id="aWhat" rows="2" placeholder="예: 운행 중 멈춤 (몇 글자만 쳐도 아래에 추천이 떠요)"></textarea><div class="sugg" id="sgWhat"></div>
+    <label class="f">원인 (장애 내용)</label><textarea id="aCause" rows="2" placeholder="예: 외부 충격에 의한 카도어 뒤틀림"></textarea><div class="sugg" id="sgCause"></div>
+    <label class="f">점검·조치 내용</label><textarea id="aAct" rows="2" placeholder="예: 이물질 제거 후 가동 (원인을 고르면 자주 쓴 조치가 떠요)"></textarea><div class="sugg" id="sgAct"></div>
+    <div class="grid2"><div><label class="f">교체 부품 <span class="fhint">없으면 비워두기</span></label><input type="text" id="aPart" placeholder="예: 롤러, 센서" autocomplete="off"></div><div><label class="f">작업자</label><input type="text" id="aWorker" placeholder="업체 작업자" autocomplete="off"></div></div><div class="sugg" id="sgPart"></div><div class="sugg" id="sgWorker"></div>
     <label class="f">비운행</label>
     <div class="seg" id="aNon"><button data-v="없음" class="on">없음</button><button data-v="있음">있음</button></div>
     <input type="text" id="aNonT" placeholder="비운행 시간 (예: 30분)" hidden style="margin-top:8px">

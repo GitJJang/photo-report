@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.5";
+const APP_VERSION = "2.1.6";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -708,7 +708,7 @@ const IC = {
 };
 const catIc = { "점검": IC.chk, "검사": IC.ins, "중보수": IC.rep, "수선": IC.rep };
 const planRow = (it) => `<div class="prow2 ${lineCls[it.line] || ""}"><span class="bar4"></span><div class="pm"><div class="pt"><span class="cat ${catCls[it.cat] || "c1"}">${catIc[it.cat] || ""}${esc(it.cat)}</span>${it.line ? `<span>${esc(it.line)} ${esc(it.kind || "")}</span>` : ""}</div><div class="px stn">${stnHtml(it.text)}</div></div></div>`;
-let homeCt = (() => { try { return localStorage.getItem("sdj-ct") || "staff"; } catch (e) { return "staff"; } })();
+let homeCt = (() => { try { return localStorage.getItem("sdj-ct") || "1호선"; } catch (e) { return "1호선"; } })();
 async function renderHome() {
   const [d, pl] = await Promise.all([loadData("sample").catch(() => null), getPlan()]);
   if (!d) { $("#hWork").innerHTML = '<div class="empty">데이터를 불러오지 못했어요</div>'; return; }
@@ -736,7 +736,7 @@ async function renderHome() {
   const cell = (p, c) => `<a class="pc ${c}" href="${esc(telHref(p.tel))}"><span>${esc(p.name)}${p.role ? `<small class="rk">${esc(p.role)}</small>` : ""}</span>${callIc}</a>`;
   const grid = (arr, c, extra) => (arr && arr.length ? `<div class="pgrid${extra ? " " + extra : ""}">${arr.map((p) => cell(p, c)).join("")}</div>` : '<div class="empty1">없음</div>');
   const dset = new Set(duty.duty), oset = new Set(duty.off);
-  const tabsHtml = ["staff", "1호선", "2호선"].map((k) => {
+  const tabsHtml = ["1호선", "2호선", "staff"].map((k) => {
     if (k === "staff") return `<button data-ct="staff" class="staffT${homeCt === "staff" ? " on" : ""}">${IC.people}승강관리소${ct.data.staff ? "" : '<span class="tag smp" style="height:18px">샘플</span>'}</button>`;
     const v = ct.data[k] || {}, nD = (v.people || []).filter((p) => dset.has(k + "|" + p.name)).length;
     return `<button data-ct="${k}" class="${homeCt === k ? "on" : ""}"><span class="lt ${lineCls[k]}"></span>${k} ${esc((v.co || "").replace(/\s*엘리베이터$/, ""))}${nD ? ` · 당직 ${nD}` : ""}</button>`;
@@ -1180,13 +1180,13 @@ function accTLm(a) {
 const accHtml = (a, mini) => {
   const open = !a.done;
   return `<div class="acard${open ? " open" : ""}${mini ? " mini2" : ""}"${a.id ? ` data-id="${a.id}"` : ""}><div class="top"><b>${esc(accPlace(a) || "(역 미입력)")}</b><span class="when">${dLabel(itemDate(a))}</span></div>` +
-    `<div class="tags">${a.type ? `<span class="tag">${esc(a.type)}</span>` : ""}<span class="tag ${open ? "bad" : "ok"}">${open ? "처리 중" : "처리 완료"}</span>${a.nonrun && a.nonrun !== "없음" ? `<span class="tag warn">비운행 ${esc(a.nonrun)}</span>` : ""}</div>` +
-    (a.what ? `<div class="what">${esc(a.what)}</div>` : "") + (a.action && !mini ? `<div class="act">▸ ${nl(a.action)}</div>` : "") + (mini ? accTLm(a) : accTL(a)) + (a.note && !mini ? `<div class="nt">${nl(a.note)}</div>` : "") + "</div>";
+    `<div class="tags">${a.type ? `<span class="tag">${esc(a.type)}</span>` : ""}${a.ftype ? `<span class="tag">${esc(a.ftype)}</span>` : ""}<span class="tag ${open ? "bad" : "ok"}">${open ? "처리 중" : "처리 완료"}</span>${a.nonrun && a.nonrun !== "없음" ? `<span class="tag warn">비운행 ${esc(a.nonrun)}</span>` : ""}</div>` +
+    (a.what ? `<div class="what">${esc(a.what)}</div>` : "") + (a.cause && !mini ? `<div class="act">원인 · ${esc(a.cause)}</div>` : "") + (a.action && !mini ? `<div class="act">▸ ${nl(a.action)}${a.part ? ` <span class="tag">교체 ${esc(a.part)}</span>` : ""}</div>` : "") + (mini ? accTLm(a) : accTL(a)) + (a.note && !mini ? `<div class="nt">${nl(a.note)}</div>` : "") + "</div>";
 };
 
 
 /* 사고·고장 조치 입력 (카톡 보고 양식 그대로) */
-let accForm = { id: null, kind: "EL", type: "고장", non: "없음", done: 1 };
+let accForm = { id: null, kind: "EL", type: "고장", non: "없음", done: 1, ft: "", ftM: false, tyM: false, dnM: false };
 const A = (id) => $("#" + id);
 function accFillUnits() { A("aUnit").innerHTML = '<option value="">호기</option>' + Array.from({ length: 40 }, (_, i) => `<option>${i + 1}</option>`).join(""); }
 function accFillStations(line, sel) {
@@ -1195,7 +1195,7 @@ function accFillStations(line, sel) {
 }
 const segSet = (id, v) => [...A(id).children].forEach((b) => b.classList.toggle("on", b.dataset.v === String(v)));
 function accFill(r) {
-  accForm = { id: r.id || null, kind: r.kind || "EL", type: r.type || "고장", non: !r.nonrun || r.nonrun === "없음" ? "없음" : "있음", done: r.done === false || r.done === 0 ? 0 : 1 };
+  accForm = { id: r.id || null, kind: r.kind || "EL", type: r.type || "고장", non: !r.nonrun || r.nonrun === "없음" ? "없음" : "있음", done: r.done === false || r.done === 0 ? 0 : 1, ft: r.ftype || "", ftM: !!r.ftype, tyM: !!r.id, dnM: !!r.id };
   const ln = r.line || ((DATA.lines.find((l) => l.stations.includes(r.station)) || {}).name) || "1호선";
   A("aDate").value = r.date || todayKey(); A("aLine").value = ln;
   const inList = DATA.lines.find((l) => l.name === ln).stations.includes(r.station);
@@ -1205,9 +1205,109 @@ function accFill(r) {
   A("aUnit").value = r.unit || ""; segSet("aKind", accForm.kind); segSet("aType", accForm.type); segSet("aNon", accForm.non); segSet("aDone", accForm.done);
   A("aNonT").hidden = accForm.non !== "있음"; A("aNonT").value = accForm.non === "있음" ? r.nonrun || "" : "";
   A("aWhat").value = r.what || ""; A("aAct").value = r.action || ""; A("aNote").value = r.note || "";
+  A("aCause").value = r.cause || ""; A("aPart").value = r.part || ""; A("aWorker").value = r.worker || "";
+  if (!accForm.ft) accForm.ft = guessFt(accForm.kind, [r.what, r.cause, r.action].join(" ")); renderFt(); sgClear();
   A("aRecv").value = r.tRecv || ""; A("aArr").value = r.tArr || ""; A("aDoneT").value = r.tDone || "";
   A("aDel").hidden = !r.id; A("accTitle").textContent = r.id ? "사고·고장 조치 수정" : "사고·고장 조치 입력";
 }
+
+
+/* ---------- 입력 도우미: 장애유형 자동 선택 · 문장 추천(반완성) · 부품/작업자 추천 ---------- */
+let PH = null;
+const FT = { EL: ["도어장치", "구동장치", "제어장치", "감지장치", "부속장치", "인적", "기타"], ES: ["스텝장치", "핸드레일장치", "구동장치", "제어장치", "감지장치", "부속장치", "인적", "기타"] };
+const FT_RULE = [
+  ["인적", /전도|넘어|부주의|휠체어|유모차|손수레|캐리어|장난|외부\s*충격|충격/],
+  ["핸드레일장치", /핸드레일|손잡이/],
+  ["도어장치", /도어|문\s|문$|씰|개폐|닫힘|열림/],
+  ["스텝장치", /스텝|롤러|콤|스커트|트레드/],
+  ["구동장치", /브레이크|모터|감속기|체인|권상|로프|구동|베어링|역구동/],
+  ["감지장치", /센서|포토|감지|세이프티|스위치\s*작동|리미트/],
+  ["제어장치", /에러|기판|인버터|제어|마그네트|접점|역결상|전원|정전|차단기|퓨즈|PLC/i],
+  ["부속장치", /버튼|통화|인터폰|비상호출|호출|조명|에어컨|냉방|환풍|카\s*내부|CCTV|표시기/i],
+];
+function guessFt(kind, text) {
+  const t = String(text || ""); if (!t.trim()) return "";
+  for (const [ft, re] of FT_RULE) if (re.test(t) && FT[kind].includes(ft)) return ft;
+  return "";
+}
+const accTxt = () => [A("aWhat").value, A("aCause").value, A("aAct").value].join(" ");
+function renderFt() { A("aFt").innerHTML = FT[accForm.kind].map((f) => `<button type="button" data-ft="${f}" class="${accForm.ft === f ? "on" : ""}">${f}</button>`).join(""); }
+A("aFt").addEventListener("click", (e) => { const b = e.target.closest("[data-ft]"); if (!b) return; accForm.ft = accForm.ft === b.dataset.ft ? "" : b.dataset.ft; accForm.ftM = true; renderFt(); });
+const nz = (x) => String(x || "").toLowerCase().replace(/\s/g, "");
+const toks = (x) => String(x || "").split(/[\s,·()/]+/).filter((w) => w.length >= 2);
+let accMine = [];
+async function loadMine() { try { accMine = ((await idbGet("acc")) || []).filter((a) => !a.sample); } catch (e) { accMine = []; } }
+function phraseList(field) {
+  const k = accForm.kind, base = (PH && PH[k] && PH[k][field]) || [], key = { what: "what", cause: "cause", action: "action" }[field];
+  const mine = accMine.filter((a) => (a.kind || "EL") === k).map((a) => String(a[key] || "").split("\n")[0].trim()).filter(Boolean);
+  const seen = new Set(), out = [];
+  [...mine.reverse(), ...base].forEach((p) => { const z = nz(p); if (z && !seen.has(z)) { seen.add(z); out.push(p); } });
+  return out;
+}
+function rankBy(list, ctx) { const ct = toks(ctx); if (!ct.length) return list; return list.map((p, i) => ({ p, s: ct.reduce((n, w) => n + (p.includes(w) ? 2 : nz(p).includes(nz(w).slice(0, 2)) ? 1 : 0), 0), i })).sort((a, b) => b.s - a.s || a.i - b.i).map((x) => x.p); }
+function suggest(field) {
+  const el = A({ what: "aWhat", cause: "aCause", action: "aAct" }[field]), q = nz(el.value);
+  let list = phraseList(field);
+  if (q) list = list.filter((p) => nz(p) !== q && hasText(nz(p), q));
+  else if (field === "cause") list = rankBy(list, A("aWhat").value);
+  else if (field === "action") { const c = A("aCause").value.trim(), pr = (PH && PH[accForm.kind] && PH[accForm.kind].pair && PH[accForm.kind].pair[c]) || []; list = [...pr, ...rankBy(list, c || A("aWhat").value).filter((p) => !pr.includes(p))]; }
+  return list.slice(0, q ? 6 : 5);
+}
+const hi = (p, q) => { if (!q) return esc(p); const i = p.toLowerCase().indexOf(q.toLowerCase()); return i < 0 ? esc(p) : esc(p.slice(0, i)) + "<b>" + esc(p.slice(i, i + q.length)) + "</b>" + esc(p.slice(i + q.length)); };
+function sgClear() { ["sgWhat", "sgCause", "sgAct", "sgPart", "sgWorker"].forEach((id) => (A(id).innerHTML = "")); }
+function sgShow(field) {
+  sgClear();
+  const map = { what: ["aWhat", "sgWhat"], cause: ["aCause", "sgCause"], action: ["aAct", "sgAct"] };
+  if (map[field]) {
+    const [inp, box] = map[field], q = A(inp).value.trim(), arr = suggest(field);
+    A(box).innerHTML = arr.length ? `<span class="sl">${q ? "추천" : field === "action" && A("aCause").value.trim() ? "자주 한 조치" : "자주 쓰는 말"}</span>` + arr.map((p) => `<button type="button" data-sg="${inp}" data-v="${esc(p)}">${hi(p, q)}</button>`).join("") : "";
+    return;
+  }
+  if (field === "part") {
+    const q = nz(A("aPart").value); if (!q) return;
+    const arr = PARTS.filter((p) => hasText(p.k, q)).slice(0, 6);
+    A("sgPart").innerHTML = arr.length ? '<span class="sl">부품</span>' + arr.map((p) => { const v = p.n + (p.sp ? "(" + p.sp + ")" : "") + " 1개"; return `<button type="button" data-sg="aPart" data-v="${esc(v)}">${esc(p.n)} <small>${esc(p.sp || "")}</small></button>`; }).join("") : "";
+    return;
+  }
+  if (field === "worker") {
+    getContacts().then((ct) => {
+      const ln = A("aLine").value, q = A("aWorker").value.trim();
+      const used = accMine.filter((a) => a.worker && a.line === ln).map((a) => a.worker).reverse();
+      const ppl = (((ct.data || {})[ln] || {}).people || []).map((p) => p.name);
+      const all = [...new Set([...used, ...ppl])].filter((n) => !q || (n !== q && hasText(n, q))).slice(0, 8);
+      A("sgWorker").innerHTML = all.length ? '<span class="sl">작업자</span>' + all.map((n) => `<button type="button" data-sg="aWorker" data-v="${esc(n)}">${hi(n, q)}</button>`).join("") : "";
+    });
+  }
+}
+const SGF = { aWhat: "what", aCause: "cause", aAct: "action", aPart: "part", aWorker: "worker" };
+Object.entries(SGF).forEach(([id, f]) => {
+  const el = A(id);
+  el.addEventListener("focus", () => { loadMine().then(() => sgShow(f)); });
+  el.addEventListener("input", () => { sgShow(f); autoFromText(); });
+  el.addEventListener("blur", () => setTimeout(() => { const ae = document.activeElement; if (ae && (SGF[ae.id] || (ae.closest && ae.closest(".sugg")))) return; sgClear(); }, 150));
+});
+document.querySelectorAll("#accBack .sugg").forEach((b) => {
+  b.addEventListener("pointerdown", (e) => { if (e.target.closest("[data-sg]")) e.preventDefault(); });
+  b.addEventListener("click", (e) => {
+    const c = e.target.closest("[data-sg]"); if (!c) return;
+    const el = A(c.dataset.sg); el.value = c.dataset.v; autoFromText();
+    const next = { aWhat: "aCause", aCause: "aAct" }[c.dataset.sg];
+    if (next && !A(next).value.trim()) { A(next).focus(); } else { sgClear(); el.blur(); }
+  });
+});
+function autoFromText() {
+  const t = accTxt();
+  if (!accForm.ftM) { accForm.ft = guessFt(accForm.kind, t); renderFt(); }
+  if (!accForm.tyM) { const ty = /전도|넘어/.test(t) ? "전도" : /갇힘|갇혔|갇혀/.test(t) ? "갇힘" : "고장"; if (ty !== accForm.type) { accForm.type = ty; segSet("aType", ty); } }
+}
+function autoNon() {
+  if (accForm.non !== "있음" || (A("aNonT").value.trim() && !A("aNonT").dataset.auto)) return;
+  const a = toMin(normT(A("aRecv").value)), b = toMin(normT(A("aDoneT").value));
+  if (a === null || b === null) return; let m = b - a; if (m < 0) m += 1440;
+  A("aNonT").value = m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${m}분`; A("aNonT").dataset.auto = "1";
+}
+A("aNonT").addEventListener("input", () => { delete A("aNonT").dataset.auto; });
+function autoDone() { if (accForm.dnM) return; const d = normT(A("aDoneT").value) ? 1 : 0; if (d !== accForm.done) { accForm.done = d; segSet("aDone", d); } }
 
 /* 시간 입력: 숫자만 치면 10:59 모양으로 맞춤 */
 function normT(v) {
@@ -1221,22 +1321,23 @@ const tAdd = (t, n) => { const x = toMin(t); if (x === null) return ""; const y 
 ["aRecv", "aArr", "aDoneT"].forEach((id) => {
   const el = $("#" + id);
   el.addEventListener("input", () => { const d = el.value.replace(/\D/g, ""); if (d.length >= 4) el.value = normT(d.slice(0, 4)) || el.value; });
-  el.addEventListener("blur", () => { const n = normT(el.value); el.value = n; if (!n && el.value === "") return; });
+  el.addEventListener("blur", () => { const n = normT(el.value); el.value = n; autoNon(); autoDone(); });
+  el.addEventListener("change", () => { autoNon(); autoDone(); });
 });
 $("#accBack").addEventListener("click", (e) => {
   const b = e.target.closest("[data-now],[data-add]"); if (!b) return;
-  if (b.dataset.now) { $("#" + b.dataset.now).value = tNow(); return; }
+  if (b.dataset.now) { $("#" + b.dataset.now).value = tNow(); autoNon(); autoDone(); return; }
   const base = normT($("#" + b.dataset.from).value); if (!base) return toast("앞 시간을 먼저 넣어 주세요");
-  $("#" + b.dataset.add).value = tAdd(base, +b.dataset.n);
+  $("#" + b.dataset.add).value = tAdd(base, +b.dataset.n); autoNon(); autoDone();
 });
 function accRead() {
   const stn = A("aStn").value === "__c" ? A("aStnC").value.trim() : A("aStn").value;
   return { id: accForm.id || Date.now(), date: A("aDate").value || todayKey(), line: A("aLine").value, station: stn, kind: accForm.kind, unit: A("aUnit").value, type: accForm.type,
-    what: A("aWhat").value.trim(), action: A("aAct").value.trim(), nonrun: accForm.non === "있음" ? (A("aNonT").value.trim() || "있음") : "없음",
+    what: A("aWhat").value.trim(), cause: A("aCause").value.trim(), action: A("aAct").value.trim(), part: A("aPart").value.trim(), worker: A("aWorker").value.trim(), ftype: accForm.ft || "", nonrun: accForm.non === "있음" ? (A("aNonT").value.trim() || "있음") : "없음",
     tRecv: normT(A("aRecv").value), tArr: normT(A("aArr").value), tDone: normT(A("aDoneT").value), note: A("aNote").value.trim(), done: !!accForm.done };
 }
 function accText(r) {
-  return [accPlace(r), r.what, r.action, r.nonrun ? (r.nonrun === "없음" ? "(비운행 없음)" : "(비운행 " + r.nonrun + ")") : "", r.tRecv && "접수 " + r.tRecv, r.tArr && "도착 " + r.tArr, r.tDone && "완료 " + r.tDone, r.note ? "\n" + r.note : ""].filter((x) => x !== "" && x !== undefined && x !== false && x !== null).join("\n");
+  return [accPlace(r), r.what, r.cause, r.action, r.part ? "교체: " + r.part : "", r.worker, r.nonrun ? (r.nonrun === "없음" ? "(비운행 없음)" : "(비운행 " + r.nonrun + ")") : "", r.tRecv && "접수 " + r.tRecv, r.tArr && "도착 " + r.tArr, r.tDone && "완료 " + r.tDone, r.note ? "\n" + r.note : ""].filter((x) => x !== "" && x !== undefined && x !== false && x !== null).join("\n");
 }
 function parseKakao(raw) {
   const HDR = /^([가-힣A-Za-z·]{1,10}(?:\s[가-힣]{1,6})?)\s*(EL|ES|엘|에스)\s*0?(\d{1,2})\s*(?:호기)?$/i;
@@ -1255,6 +1356,8 @@ function parseKakao(raw) {
     });
     flush();
     const main = segs[0] || [];
+    if (main.length > 2 && /^[가-힣]{2,4}$/.test(main[main.length - 1])) r.worker = main.pop();
+    const pl = main.findIndex((x, i) => i > 0 && /^교체\s*[:：]/.test(x)); if (pl > 0) r.part = main.splice(pl, 1)[0].replace(/^교체\s*[:：]\s*/, "");
     r.what = main[0] || ""; r.action = main.slice(1).join("\n"); r.note = segs.slice(1).map((x) => x.join("\n")).join("\n");
     const all = [r.what, r.action, r.note].join(" ");
     r.type = /전도/.test(all) ? "전도" : /갇힘|갇혔/.test(all) ? "갇힘" : /정지/.test(all) ? "정지" : "고장";
@@ -1264,13 +1367,13 @@ function parseKakao(raw) {
   });
 }
 async function accSaveRec(r) { const all = (await idbGet("acc").catch(() => null)) || []; const i = all.findIndex((x) => x.id === r.id); if (i >= 0) all[i] = r; else all.push(r); await idbSet("acc", all); }
-function openAcc(r) { accFillUnits(); accFill(r || { date: todayKey(), line: "1호선", kind: "EL", type: "고장", done: 1 }); A("accPaste").value = ""; A("accBack").hidden = false; }
+function openAcc(r) { accFillUnits(); loadData("phrases").then((d) => (PH = d)).catch(() => {}); let ll = "1호선"; try { ll = localStorage.getItem("sdj-accline") || ll; } catch (e) {} accFill(r || { date: todayKey(), line: ll, kind: "EL", type: "고장", done: 0 }); A("accPaste").value = ""; A("accBack").hidden = false; }
 $("#accNew").onclick = () => openAcc(null);
 $("#aClose").onclick = () => (A("accBack").hidden = true);
 A("accBack").addEventListener("click", (e) => { if (e.target.id === "accBack") A("aClose").click(); });
 A("aLine").onchange = () => { accFillStations(A("aLine").value, ""); A("aStnC").hidden = true; };
 A("aStn").onchange = () => { A("aStnC").hidden = A("aStn").value !== "__c"; if (!A("aStnC").hidden) A("aStnC").focus(); };
-[["aKind", "kind"], ["aType", "type"], ["aNon", "non"], ["aDone", "done"]].forEach(([id, k]) => A(id).addEventListener("click", (e) => { const b = e.target.closest("[data-v]"); if (!b) return; accForm[k] = k === "done" ? +b.dataset.v : b.dataset.v; segSet(id, b.dataset.v); if (k === "non") A("aNonT").hidden = accForm.non !== "있음"; }));
+[["aKind", "kind"], ["aType", "type"], ["aNon", "non"], ["aDone", "done"]].forEach(([id, k]) => A(id).addEventListener("click", (e) => { const b = e.target.closest("[data-v]"); if (!b) return; accForm[k] = k === "done" ? +b.dataset.v : b.dataset.v; segSet(id, b.dataset.v); if (k === "non") { A("aNonT").hidden = accForm.non !== "있음"; autoNon(); } if (k === "type") accForm.tyM = true; if (k === "done") accForm.dnM = true; if (k === "kind") { if (!accForm.ftM) accForm.ft = guessFt(accForm.kind, accTxt()); renderFt(); } }));
 A("aParse").onclick = async () => {
   const bl = parseKakao(A("accPaste").value); if (!bl.length) return toast("카톡 글 첫 줄이 '역 EL4' 모양이어야 해요 (예: 중앙 EL4)", 5000);
   if (bl.length === 1) { accFill({ ...bl[0], date: A("aDate").value || todayKey() }); toast("채웠어요. 확인하고 저장하세요"); return; }
@@ -1279,7 +1382,7 @@ A("aParse").onclick = async () => {
   for (const b of bl) await accSaveRec({ ...b, id: Date.now() + i++, date });
   A("accBack").hidden = true; toast(bl.length + "건 저장했어요"); renderStat();
 };
-A("aSave").onclick = async () => { const r = accRead(); if (!r.station && !r.what) return toast("역 또는 내용을 입력하세요"); await accSaveRec(r); A("accBack").hidden = true; toast("저장했어요"); renderStat(); };
+A("aSave").onclick = async () => { const r = accRead(); try { localStorage.setItem("sdj-accline", r.line); } catch (e) {} if (!r.station && !r.what) return toast("역 또는 내용을 입력하세요"); await accSaveRec(r); A("accBack").hidden = true; toast("저장했어요"); renderStat(); };
 A("aSend").onclick = () => {
   const r = accRead(); if (!r.station && !r.what) return toast("역 또는 내용을 입력하세요");
   const text = accText(r);
@@ -1316,7 +1419,7 @@ async function renderStat() {
       c("p", "month", "이번달", accState.p) + c("p", "all", "전체 기간", accState.p) + '<span class="sep"></span>' + c("k", "EL", "EL", accState.k) + c("k", "ES", "ES", accState.k);
     const q = accState.q.toLowerCase().replace(/\s/g, "");
     const arr = inP.filter((a) => accState.f === "all" || (accState.f === "done" ? a.done : !a.done))
-      .filter((a) => !q || hasText([accPlace(a), a.type, a.what, a.action, a.note, a.nonrun].join(" ").toLowerCase().replace(/\s/g, ""), q))
+      .filter((a) => !q || hasText([accPlace(a), a.type, a.ftype, a.what, a.cause, a.action, a.part, a.worker, a.note, a.nonrun].join(" ").toLowerCase().replace(/\s/g, ""), q))
       .sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1) || itemDate(b) - itemDate(a) || (b.id || 0) - (a.id || 0));
     $("#accCnt").textContent = q ? `검색 결과 ${arr.length}건 · 처리 중인 건이 위에 보여요` : `${arr.length}건 · 처리 중인 건이 위에 보여요`;
     $("#accList").innerHTML = arr.map((a) => accHtml(a)).join("") || `<div class="empty">${IC.alert}기록이 없어요</div>`;
