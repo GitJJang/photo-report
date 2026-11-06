@@ -2,6 +2,8 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
+<script>/* 카톡 안 브라우저에서는 설치가 안 되므로 기본 브라우저(크롬·사파리)로 자동 전환 */
+try{if(/KAKAOTALK/i.test(navigator.userAgent)){location.href="kakaotalk://web/openExternal?url="+encodeURIComponent(location.href);}}catch(e){}</script>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <meta name="theme-color" content="#0b2447">
 <meta name="mobile-web-app-capable" content="yes">
