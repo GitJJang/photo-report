@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.3";
+const APP_VERSION = "2.1.4";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -599,7 +599,7 @@ function showTab(t) {
   $("#ttl").textContent = TITLES[t]; $("#actBar").hidden = t !== "photo"; $("#cnt").hidden = t !== "photo";
   document.body.classList.toggle("has-bar", t === "photo");
   const nd = new Date();
-  $("#subt").textContent = { home: `${nd.getMonth() + 1}월 ${nd.getDate()}일 ${"일월화수목금토"[nd.getDay()]}요일 · 대구교통공사 승강`, plan: "월간 점검·검사·중보수", stock: "창고 실재고 · 대체 부품", stat: "사고·고장 · 장기 미수선 · 교체 이력", photo: "교체 전·후 사진으로 사진대지 만들기" }[t] || "";
+  $("#subt").textContent = { home: `${nd.getMonth() + 1}월 ${nd.getDate()}일 ${"일월화수목금토"[nd.getDay()]}요일 · 대구교통공사 승강`, plan: "월간 점검·검사·중보수", stock: "창고 실재고 · 대체 부품", stat: "사고·고장 · 교체 이력", photo: "교체 전·후 사진으로 사진대지 만들기" }[t] || "";
   if (t === "photo") { renderJobs(); renderPhotoRecent(); }
   if (t === "home") renderHome();
   if (t === "plan") renderPlan();
@@ -635,8 +635,10 @@ const itemHtml = (it) => `<div class="item"><div><span class="cat ${catCls[it.ca
 let dutyMode = null;
 async function getContacts() {
   let st = null; try { st = await idbGet("contacts"); } catch (e) {}
-  if (st && st.data) return { data: st.data, demo: false };
-  const d = await loadData("sample").catch(() => ({})); return { data: (d.work && d.work.vendor) || {}, demo: true };
+  const hasVendor = (o) => o && ["1호선", "2호선"].some((k) => o[k] && (o[k].people || []).length);
+  if (st && st.data && hasVendor(st.data)) return { data: st.data, demo: false };
+  const d = await loadData("sample").catch(() => ({}));
+  return { data: { ...((d.work && d.work.vendor) || {}), ...((st && st.data && st.data.staff) ? { staff: st.data.staff } : {}) }, demo: true };
 }
 const todayKey = () => { const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
 async function getRosterAll() { try { const s = await idbGet("roster"); return (s && s.map) || {}; } catch (e) { return {}; } }
@@ -714,12 +716,14 @@ async function renderHome() {
   const todays = pl.items.filter((it) => itemDate(it).getTime() === t0m).sort((a, b) => CATS.indexOf(a.cat) - CATS.indexOf(b.cat) || (a.line || "").localeCompare(b.line || ""));
   const accAll = await getAccAll(), openList = accAll.list.filter((a) => !a.done);
   const mStart = new Date(t0.getFullYear(), t0.getMonth(), 1).getTime();
-  const doneMonth = accAll.list.filter((a) => a.done && itemDate(a).getTime() >= mStart).length, lng = (d.longrepair || []).length;
+  const doneMonth = accAll.list.filter((a) => a.done && itemDate(a).getTime() >= mStart).length;
+  const wk0 = t0m - ((t0.getDay() + 6) % 7) * 864e5, wk1 = wk0 + 7 * 864e5;
+  const weekN = pl.items.filter((it) => { const x = itemDate(it).getTime(); return x >= wk0 && x < wk1; }).length;
   $("#hTiles").innerHTML =
     `<button class="kpi" data-go="plan"><b>${todays.length}</b><small>오늘 작업</small></button>` +
     `<button class="kpi${openList.length ? " bad" : ""}" data-go="stat" data-seg="acc" data-af="open"><b>${openList.length}</b><small>처리 중 사고</small></button>` +
     `<button class="kpi ok" data-go="stat" data-seg="acc" data-af="done"><b>${doneMonth}</b><small>이번달 완료</small></button>` +
-    `<button class="kpi${lng ? " warn" : ""}" data-go="stat" data-seg="long"><b>${lng}</b><small>장기 미수선</small></button>`;
+    `<button class="kpi" data-go="plan"><b>${weekN}</b><small>이번주 작업</small></button>`;
   $("#hAlert").innerHTML = openList.length
     ? `<div class="alertbox"><h3>${IC.alert}처리 중인 사고·고장 ${openList.length}건${accAll.demo ? ' <span class="tag smp">샘플</span>' : ""}</h3>` +
       openList.sort((a, b) => itemDate(b) - itemDate(a)).slice(0, 3).map((a) => `<div class="ar" data-go="stat" data-seg="acc" data-af="open"><b>${esc(accPlace(a) || "(역 미입력)")}</b><span>${esc(a.what || a.type || "")}</span><small class="when">${dLabel(itemDate(a))}</small></div>`).join("") + "</div>"
@@ -733,12 +737,17 @@ async function renderHome() {
   const grid = (arr, c, extra) => (arr && arr.length ? `<div class="pgrid${extra ? " " + extra : ""}">${arr.map((p) => cell(p, c)).join("")}</div>` : '<div class="empty1">없음</div>');
   const dset = new Set(duty.duty), oset = new Set(duty.off);
   const tabsHtml = ["1호선", "2호선", "staff"].map((k) => {
-    if (k === "staff") return `<button data-ct="staff" class="${homeCt === "staff" ? "on" : ""}">승강관리소<span class="tag smp" style="height:18px">샘플</span></button>`;
+    if (k === "staff") return `<button data-ct="staff" class="${homeCt === "staff" ? "on" : ""}">승강관리소${ct.data.staff ? "" : '<span class="tag smp" style="height:18px">샘플</span>'}</button>`;
     const v = ct.data[k] || {}, nD = (v.people || []).filter((p) => dset.has(k + "|" + p.name)).length;
     return `<button data-ct="${k}" class="${homeCt === k ? "on" : ""}"><span class="lt ${lineCls[k]}"></span>${k} ${esc(v.co || "")}${nD ? ` · 당직 ${nD}` : ""}</button>`;
   }).join("");
   let body = "";
-  if (homeCt === "staff") {
+  if (homeCt === "staff" && ct.data.staff) {
+    const S = ct.data.staff, groups = [];
+    (S.people || []).forEach((p) => { let g = groups.find((x) => x.n === (p.grp || "관리소")); if (!g) groups.push((g = { n: p.grp || "관리소", a: [] })); g.a.push(p); });
+    const nums = (S.gen || S.in) ? `<div class="cnum">${S.gen ? `<a href="${esc(telHref(S.gen))}"><small>일반전화 · 누르면 연결</small>${esc(S.gen)}</a>` : ""}${S.in ? `<span><small>사내전화</small>${esc(S.in)}</span>` : ""}</div>` : "";
+    body = nums + groups.map((g) => `<div class="sub">${esc(g.n)} ${g.a.length}명</div>${grid(g.a, g.n.includes("2호선") && !g.n.includes("1") ? "l2x" : g.n.includes("1") && !g.n.includes("2") ? "l1x" : "l0x")}`).join("");
+  } else if (homeCt === "staff") {
     const st = (d.work && d.work.staff) || {};
     body = ["통상", "1호선", "2호선"].map((k) => `<div class="sub"><span class="lt ${lineCls[k] || ""}"></span>${k === "통상" ? "통상 근무" : k + " 담당"} ${(st[k] || []).length}명</div>${grid(st[k], cls[k])}`).join("") + '<div class="note" style="padding:0 14px 10px">관리소 직원 명단은 아직 샘플이에요. 실제 명단을 받으면 바꿔 넣어요.</div>';
   } else {
@@ -749,11 +758,11 @@ async function renderHome() {
     if (dutyMode === k) {
       body = nums + `<div class="sub duty">오늘 당직으로 지정할 사람을 누르세요</div><div class="pgrid">${ppl.map((p) => `<button class="pc dpick${isD(p) ? " on" : ""}" data-k="${k}|${esc(p.name)}"><span>${esc(p.name)}${p.role ? `<small class="rk">${esc(p.role)}</small>` : ""}</span><em>${isD(p) ? "당직 ✓" : "당직"}</em></button>`).join("")}</div>`;
     } else {
-      body = nums + `<div class="sub duty">오늘 당직 ${dutyP.length}명</div>` + (dutyP.length ? grid(dutyP, c, "duty") : '<div class="empty1">지정된 당직이 없어요 · 아래 "당직 지정"을 누르세요</div>') +
+      body = nums + `<div class="sub duty">오늘 당직 ${dutyP.length}명</div>` + (dutyP.length ? grid(dutyP, c, "duty") : (duty.has ? '<div class="empty1">오늘 근무표에 당직이 없어요</div>' : `<div class="rsup"><p>근무표 엑셀을 올리면 오늘 당직·주간·휴무가 자동으로 나뉘어요</p><label class="btn sm">근무표 올리기<input type="file" accept=".xlsx,.xlsm" class="rsIn"></label></div>`)) +
         `<div class="sub">주간 근무 ${dayP.length}명</div>` + grid(dayP, c) +
         (offP.length ? `<div class="sub off">휴무 ${offP.length}명</div>${grid(offP, c, "offlist")}` : "");
     }
-    body += `<div class="cfoot"><span class="note" style="margin:0">${ct.demo ? '<span class="tag smp">샘플 연락처</span>' : duty.has ? "오늘 근무표 반영됨" : "근무표 없음 · 당직은 직접 지정"}</span><button class="link dmode" data-m="${k}">${dutyMode === k ? "지정 끝내기" : "당직 지정"}</button></div>`;
+    body += `<div class="cfoot"><span class="note" style="margin:0">${ct.demo ? '<span class="tag smp">샘플 연락처</span>' : duty.has ? "오늘 근무표 반영됨" : "근무표 없음"}</span>${duty.has ? '<label class="link">근무표 다시 올리기<input type="file" accept=".xlsx,.xlsm" class="rsIn"></label>' : ""}</div>`;
   }
   $("#hWork").innerHTML = `<div class="ph"><h2>${IC.people}연락처 · 비상연락망</h2></div><div class="ctabs">${tabsHtml}</div>${body}`;
 
@@ -815,7 +824,7 @@ function parseRoster(grids, fname, contacts) {
   return map;
 }
 document.addEventListener("change", async (e) => {
-  if (e.target.id !== "rsFile") return;
+  if (e.target.id !== "rsFile" && !e.target.classList.contains("rsIn")) return;
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
   try {
     const ct = await getContacts(); if (ct.demo) throw new Error("비상연락망을 먼저 불러와 주세요");
