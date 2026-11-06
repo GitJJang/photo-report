@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.4";
+const APP_VERSION = "2.1.5";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -708,7 +708,7 @@ const IC = {
 };
 const catIc = { "점검": IC.chk, "검사": IC.ins, "중보수": IC.rep, "수선": IC.rep };
 const planRow = (it) => `<div class="prow2 ${lineCls[it.line] || ""}"><span class="bar4"></span><div class="pm"><div class="pt"><span class="cat ${catCls[it.cat] || "c1"}">${catIc[it.cat] || ""}${esc(it.cat)}</span>${it.line ? `<span>${esc(it.line)} ${esc(it.kind || "")}</span>` : ""}</div><div class="px stn">${stnHtml(it.text)}</div></div></div>`;
-let homeCt = (() => { try { return localStorage.getItem("sdj-ct") || "1호선"; } catch (e) { return "1호선"; } })();
+let homeCt = (() => { try { return localStorage.getItem("sdj-ct") || "staff"; } catch (e) { return "staff"; } })();
 async function renderHome() {
   const [d, pl] = await Promise.all([loadData("sample").catch(() => null), getPlan()]);
   if (!d) { $("#hWork").innerHTML = '<div class="empty">데이터를 불러오지 못했어요</div>'; return; }
@@ -736,10 +736,10 @@ async function renderHome() {
   const cell = (p, c) => `<a class="pc ${c}" href="${esc(telHref(p.tel))}"><span>${esc(p.name)}${p.role ? `<small class="rk">${esc(p.role)}</small>` : ""}</span>${callIc}</a>`;
   const grid = (arr, c, extra) => (arr && arr.length ? `<div class="pgrid${extra ? " " + extra : ""}">${arr.map((p) => cell(p, c)).join("")}</div>` : '<div class="empty1">없음</div>');
   const dset = new Set(duty.duty), oset = new Set(duty.off);
-  const tabsHtml = ["1호선", "2호선", "staff"].map((k) => {
-    if (k === "staff") return `<button data-ct="staff" class="${homeCt === "staff" ? "on" : ""}">승강관리소${ct.data.staff ? "" : '<span class="tag smp" style="height:18px">샘플</span>'}</button>`;
+  const tabsHtml = ["staff", "1호선", "2호선"].map((k) => {
+    if (k === "staff") return `<button data-ct="staff" class="staffT${homeCt === "staff" ? " on" : ""}">${IC.people}승강관리소${ct.data.staff ? "" : '<span class="tag smp" style="height:18px">샘플</span>'}</button>`;
     const v = ct.data[k] || {}, nD = (v.people || []).filter((p) => dset.has(k + "|" + p.name)).length;
-    return `<button data-ct="${k}" class="${homeCt === k ? "on" : ""}"><span class="lt ${lineCls[k]}"></span>${k} ${esc(v.co || "")}${nD ? ` · 당직 ${nD}` : ""}</button>`;
+    return `<button data-ct="${k}" class="${homeCt === k ? "on" : ""}"><span class="lt ${lineCls[k]}"></span>${k} ${esc((v.co || "").replace(/\s*엘리베이터$/, ""))}${nD ? ` · 당직 ${nD}` : ""}</button>`;
   }).join("");
   let body = "";
   if (homeCt === "staff" && ct.data.staff) {
@@ -1050,6 +1050,8 @@ function parseStock(grids) {
 async function getStock() {
   let st = null; try { st = await idbGet("stock"); } catch (e) {}
   if (st && st.items && st.items.length) return { ...st, demo: false };
+  const bi = await loadData("stock").catch(() => null);
+  if (bi && bi.items && bi.items.length) return { ...bi, prev: null, demo: false, builtin: true };
   const d = await loadData("sample").catch(() => ({}));
   return { demo: true, items: (d.stock || []).map((x) => ({ ...x, raw: x.n, st: "", sample: true })), prev: null };
 }
@@ -1071,7 +1073,7 @@ function stockView(S0) {
 let stockItems = [];
 async function renderStock() {
   const S0 = await getStock(); stockItems = stockView(S0);
-  $("#stockDemo").hidden = !S0.demo; $("#stockClear").hidden = S0.demo;
+  $("#stockDemo").hidden = !S0.demo; $("#stockClear").hidden = S0.demo || !!S0.builtin; $("#stockF").hidden = true;
   if (!stockInit) { stockInit = true; $("#stockData").open = S0.demo; }
   const when = S0.ts ? new Date(S0.ts) : null;
   $("#stockSrc").innerHTML = S0.demo ? '재고 엑셀 불러오기 <span class="tag smp">샘플 재고 보는 중</span>' : `${esc(S0.name || "재고 파일")} <span class="tag ok">${S0.items.length}품목${when ? ` · ${when.getMonth() + 1}/${when.getDate()} ${pad(when.getHours())}:${pad(when.getMinutes())} 기준` : ""}</span>`;
@@ -1088,18 +1090,17 @@ async function renderStock() {
   if (stockState.f === "zero") arr = arr.filter((x) => x.qty === 0); else if (stockState.f === "low") arr = arr.filter(stLow);
   if (stockState.st !== "all") arr = arr.filter((x) => x.st === stockState.st);
   if (stockState.mv === "out") arr = arr.filter((x) => x.outq > 0); else if (stockState.mv === "in") arr = arr.filter((x) => x.inq > 0); else if (stockState.mv === "chg") arr = arr.filter((x) => x.delta);
-  const rank = (x) => (x.qty === 0 ? 0 : stLow(x) ? 1 : 2);
-  arr = arr.slice().sort((a, b) => rank(a) - rank(b) || a.n.localeCompare(b.n, "ko") || (a.sp || "").localeCompare(b.sp || "", "ko"));
+  arr = arr.slice().sort((a, b) => a.n.localeCompare(b.n, "ko") || (a.sp || "").localeCompare(b.sp || "", "ko"));
   const shown = arr.slice(0, stockState.lim);
   $("#stockCnt").textContent = `${arr.length}품목${arr.length > shown.length ? ` 중 ${shown.length}개 표시` : ""}`;
   $("#stockList").innerHTML = shown.map((x) => {
-    const cc = x.qty === 0 ? "zero" : stLow(x) ? "low" : "";
+    const cc = x.qty === 0 ? "zero" : "";
     let alt = "";
     if (cc) alt = x.alt.length ? `<div class="alt"><b>대체 가능</b> · ${x.alt.slice(0, 2).map((c) => `${esc(c.n)} ${esc(c.sp || "")}${c.qty !== null && c.qty !== undefined ? ` <b>${c.qty}개</b>` : ""}`).join(", ")}</div>` : (x.qty === 0 ? '<div class="alt none"><b>대체 부품 없음</b> · 구매 필요</div>' : "");
     const dl = x.gone ? '<span class="tag bad">이번 파일에 없음</span>' : x.isNew && S0.prev ? '<span class="tag">새로 생김</span>' : x.delta ? `<span class="tag ${x.delta < 0 ? "warn" : "ok"}">지난번 ${x.delta > 0 ? "+" : ""}${x.delta}</span>` : "";
     const meta = [x.sp, x.st, x.loc ? "위치 " + x.loc : ""].filter(Boolean).map(esc).join(" · ");
-    return `<div class="srow ${cc}" data-i="${x.i}"><div class="sm"><b>${esc(x.n)}</b><div class="mt">${meta || "&nbsp;"}</div>${dl ? `<div style="margin-top:5px">${dl}</div>` : ""}${alt}</div><div class="q"><b>${x.qty}</b><small class="${cc ? "" : "okc"}">${cc === "zero" ? "재고 없음" : cc === "low" ? "부족" : (x.unit || "개")}</small></div></div>`;
-  }).join("") + (arr.length > shown.length ? `<button class="btn ghost wide" id="stockMore" style="border:0;border-top:1px solid var(--line);border-radius:0">${Math.min(150, arr.length - shown.length)}개 더 보기</button>` : "") || `<div class="empty">${IC.box}찾는 부품이 없어요</div>`;
+    return `<div class="srow ${cc}" data-i="${x.i}"><div class="sm"><b>${esc(x.n)}</b><div class="mt">${meta || "&nbsp;"}</div>${dl ? `<div style="margin-top:5px">${dl}</div>` : ""}${alt}</div><div class="q"><b>${x.qty}</b><small class="${cc ? "" : "okc"}">${cc === "zero" ? "없음" : (x.unit || "개")}</small></div></div>`;
+  }).join("") + (arr.length > shown.length ? `<button class="btn ghost wide" id="stockMore" style="border:0;border-top:1px solid var(--line);border-radius:0">${Math.min(150, arr.length - shown.length)}개 더 보기</button>` : "") || `<div class="empty">${IC.box}${q ? `<b>‘${esc(stockState.q.trim())}’</b> 재고 없음<br><small>재고 목록에 없는 부품이에요</small>` : "재고 목록이 비어 있어요"}</div>`;
 }
 let stockInit = false;
 $("#stockQ").addEventListener("input", (e) => { stockState.q = e.target.value; stockState.lim = 150; renderStock(); });
