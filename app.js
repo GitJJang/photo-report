@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.11";
+const APP_VERSION = "2.1.12";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -616,6 +616,8 @@ async function loadData(name) { if (dataCache[name]) return dataCache[name]; con
 async function getPlan() {
   let st = null; try { st = await idbGet("plan"); } catch (e) {}
   if (st && st.items && st.items.length) return { items: st.items, demo: false, name: st.name || "" };
+  const bi = await loadData("schedule").catch(() => null);
+  if (bi && bi.items && bi.items.length) return { items: bi.items, demo: false, name: bi.name || "", builtin: true };
   const d = await loadData("sample").catch(() => ({})); return { items: d.plan || [], demo: true };
 }
 const today0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
@@ -637,6 +639,8 @@ async function getContacts() {
   let st = null; try { st = await idbGet("contacts"); } catch (e) {}
   const hasVendor = (o) => o && ["1호선", "2호선"].some((k) => o[k] && (o[k].people || []).length);
   if (st && st.data && hasVendor(st.data)) return { data: st.data, demo: false };
+  const bi = await loadData("contacts").catch(() => null);
+  if (bi && hasVendor(bi)) return { data: { ...bi, ...((st && st.data && st.data.staff) ? { staff: st.data.staff } : {}) }, demo: false, builtin: true };
   const d = await loadData("sample").catch(() => ({}));
   return { data: { ...((d.work && d.work.vendor) || {}), ...((st && st.data && st.data.staff) ? { staff: st.data.staff } : {}) }, demo: true };
 }
@@ -1150,6 +1154,8 @@ const accState = { f: "all", q: "", p: "month", k: "all" };
 async function getAccAll() {
   let saved = []; try { saved = (await idbGet("acc")) || []; } catch (e) {}
   if (saved.length) return { list: saved, demo: false };
+  const bi = await loadData("acc").catch(() => null);
+  if (bi && bi.items && bi.items.length) return { list: bi.items, demo: false, builtin: true };
   const d = await loadData("sample").catch(() => ({}));
   return { list: (d.acc || []).map((a, i) => ({ ...a, sid: "s" + i, station: a.place, kind: "", unit: "", type: a.kind, action: a.note, note: "" })), demo: true };
 }

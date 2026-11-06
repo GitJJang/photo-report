@@ -1,6 +1,6 @@
 /* 오프라인 동작 + 공유 메뉴로 사진 받기 */
-const VERSION = "sdj-v2.1.11";
-const SHELL = ["./", "index.html", "app.js", "xlsm-core.js", "vendor/jszip.min.js", "template.xlsm", "data/stations.json", "data/parts.json", "data/sample.json", "data/stock.json", "data/phrases.json", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
+const VERSION = "sdj-v2.1.12";
+const SHELL = ["./", "index.html", "app.js", "xlsm-core.js", "vendor/jszip.min.js", "template.xlsm", "data/stations.json", "data/parts.json", "data/sample.json", "data/stock.json", "data/phrases.json", "data/schedule.json", "data/acc.json", "data/contacts.json", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
   // 브라우저 HTTP 캐시(깃허브 10분)를 건너뛰고 서버에서 새로 받는다
