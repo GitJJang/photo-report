@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.15";
+const APP_VERSION = "2.1.16";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -30,7 +30,7 @@ const stationOf = (j) => (j.station === "__custom" ? (j.stationCustom || "").tri
 const placeOf = (j) => [stationOf(j), j.unit ? (j.kind || "") + j.unit : ""].filter(Boolean).join(" ");
 const partOf = (j) => (j.part || "").trim();
 function workOf(j) {
-  const bits = [j.pos, partOf(j), partOf(j) && j.count ? j.count + "개" : ""].filter(Boolean);
+  const bits = [j.pos, partOf(j), partOf(j) && j.count ? j.count + (j.cu || "개") : ""].filter(Boolean);
   return bits.length ? bits.join(" ") + " 교체" : "";
 }
 const xjob = (j) => ({ date: j.date, place: placeOf(j), work: workOf(j), status: j.status || "" });
@@ -151,9 +151,12 @@ function newJob(from) {
   const lineName = (last && last.line) || localStorage.getItem("sdj-line") || "1호선";
   return {
     id: uid(), date: (last && last.date) || ymd(new Date()), line: lineName, station: (last && last.station) || "", stationCustom: (last && last.stationCustom) || "",
-    kind: (last && last.kind) || "ES", unit: "", pos: "", part: "", partSpec: "", count: 1, status: "", layout: "v", before: [], after: [],
+    kind: (last && last.kind) || "ES", unit: "", pos: "", part: "", partSpec: "", count: 1, cu: (last && last.cu) || "개", status: "", layout: "v", before: [], after: [],
   };
 }
+/* 자재표(재고 데이터) 단위 중 실사용 빈도순 - "식"은 제외 */
+const CU_OPTS = ["개", "set", "대", "meter", "장", "통", "조"];
+const cuOptions = (sel) => CU_OPTS.map((u) => `<option${u === (sel || "개") ? " selected" : ""}>${u}</option>`).join("");
 const unitOptions = (sel) => `<option value="">호기</option>` + Array.from({ length: 40 }, (_, i) => `<option${String(i + 1) === String(sel) ? " selected" : ""}>${i + 1}</option>`).join("");
 const stationOptions = (j) => `<option value="">역 선택</option>` + lineOf(j).stations.map((s) => `<option${s === j.station ? " selected" : ""}>${esc(s)}</option>`).join("") + `<option value="__custom"${j.station === "__custom" ? " selected" : ""}>기타(직접 입력)</option>`;
 const posOptions = (j) => DATA.positions.map((s) => `<option value="${esc(s)}"${s === j.pos ? " selected" : ""}>${s ? esc(s) : "위치 없음"}</option>`).join("");
@@ -190,7 +193,7 @@ function jobHtml(j, i) {
     <div class="row" style="margin-top:8px"><input type="text" data-f="part" placeholder="부품명 (예: 가압롤러)" value="${esc(j.part)}" autocomplete="off" style="flex:1;min-width:0"><button class="btn" data-act="findpart" style="flex:none">🔍 부품 찾기</button></div>
     ${j.partSpec ? `<button class="chip" data-act="addspec">규격 붙이기 ＋ (${esc(j.partSpec)})</button>` : ""}
     <div class="grid2" style="margin-top:8px">
-      <div class="stepper"><button data-act="cminus" aria-label="개수 줄이기">－</button><span>${j.count}개</span><button data-act="cplus" aria-label="개수 늘리기">＋</button></div>
+      <div class="stepper"><button data-act="cminus" aria-label="개수 줄이기">－</button><span>${j.count}</span><select data-f="cu" aria-label="단위" style="border:none;background:transparent;font:inherit;padding:0 2px">${cuOptions(j.cu)}</select><button data-act="cplus" aria-label="개수 늘리기">＋</button></div>
       <select data-f="status" aria-label="상태"><option value="">교체</option><option${j.status === "수선구매" ? " selected" : ""}>수선구매</option><option${j.status === "중보수" ? " selected" : ""}>중보수</option></select>
     </div>
     <div class="preview"></div>
@@ -206,7 +209,7 @@ function updateCard(card, j) {
   if (!stationOf(j)) miss.push("역"); if (!j.unit) miss.push("호기"); if (!partOf(j)) miss.push("부품");
   if (!j.before.length) miss.push("교체 전 사진"); if (!j.after.length) miss.push("교체 후 사진");
   $(".warn", card).textContent = miss.length ? "비어 있음: " + miss.join(", ") + " (비워도 만들 수 있어요)" : "";
-  $(".stepper span", card).textContent = j.count + "개";
+  $(".stepper span", card).textContent = j.count;
 }
 let paintTok = 0;
 async function paintCards() {
@@ -283,7 +286,7 @@ jobsEl.addEventListener("click", (e) => {
   else if (act === "cplus") { j.count = Math.min(99, j.count + 1); updateCard(card, j); saveSoon(); }
   else if (act === "cminus") { j.count = Math.max(1, j.count - 1); updateCard(card, j); saveSoon(); }
   else if (act === "del") { if (j.before.length + j.after.length && !b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "정말 삭제?"; setTimeout(() => { b.dataset.sure = ""; b.textContent = "삭제"; }, 3500); return; } S.jobs = S.jobs.filter((x) => x !== j); renderJobs(); }
-  else if (act === "dup") { const c = newJob(j); Object.assign(c, { unit: j.unit, pos: j.pos, part: j.part, count: j.count, status: j.status, layout: j.layout }); S.jobs.splice(S.jobs.indexOf(j) + 1, 0, c); renderJobs(); toast("복제했어요. 호기와 사진만 바꾸세요."); }
+  else if (act === "dup") { const c = newJob(j); Object.assign(c, { unit: j.unit, pos: j.pos, part: j.part, count: j.count, cu: j.cu, status: j.status, layout: j.layout }); S.jobs.splice(S.jobs.indexOf(j) + 1, 0, c); renderJobs(); toast("복제했어요. 호기와 사진만 바꾸세요."); }
   else if (act === "findpart") openParts(j);
   else if (act === "addspec") { if (j.partSpec) { j.part = (partOf(j) + " (" + j.partSpec + ")").trim(); j.partSpec = ""; const y = scrollY; renderJobs(); scrollTo(0, y); } }
   else if (act === "clearslot") { j[key] = []; renderJobs(); }
@@ -539,7 +542,7 @@ async function logHistory(ready) {
       ts: now,
       date: /^\d{8}$/.test(j.date || "") ? j.date : todayYmd(),
       line: j.line || "", station: stationOf(j), kind: j.kind || "", unit: j.unit || "",
-      part: partOf(j), count: j.count || 1, status: j.status || "",
+      part: partOf(j), count: j.count || 1, cu: j.cu || "개", status: j.status || "",
     });
   });
   // 최근 3000건만 보관
@@ -1141,7 +1144,7 @@ $("#stockList").addEventListener("click", async (e) => {
     <dl class="dl">${x.code ? `<dt>물품코드</dt><dd>${esc(x.code)}</dd>` : ""}<dt>규격</dt><dd>${esc(x.sp || "-")}</dd>${x.st ? `<dt>상태</dt><dd>${esc(x.st)}</dd>` : ""}<dt>보관 위치</dt><dd>${esc(x.loc || "-")}</dd>${x.th ? `<dt>적정재고</dt><dd>${x.th}</dd>` : ""}</dl>
     <div class="hsec">대체 가능 부품</div>${x.alt.length ? `<div class="mini">${x.alt.map((c) => `<div><span>${esc(c.n)} · ${esc(c.sp || "")}</span><b>${c.qty !== null && c.qty !== undefined ? c.qty + "개" : "재고 확인"}</b></div>`).join("")}</div>` : '<div class="note">같은 물품코드의 다른 상태(신품·중고품)나 지정된 호환 부품이 없어요</div>'}
     <div class="hsec">입고·출고 (불러온 파일 기준)</div>${io ? `<div class="mini">${io}</div>` : '<div class="note">파일에 입고·불출 칸이 없어요</div>'}
-    <div class="hsec">최근 교체 기록 (이 폰에서 만든 사진대지)</div>${hist.length ? `<div class="mini">${hist.map((h) => `<div><span>${esc((h.date || "").slice(4, 6))}/${esc((h.date || "").slice(6, 8))} · ${esc([h.station, h.unit ? (h.kind || "") + h.unit : ""].filter(Boolean).join(" "))}</span><b>${h.count || 1}개</b></div>`).join("")}</div>` : '<div class="note">아직 기록이 없어요</div>'}`;
+    <div class="hsec">최근 교체 기록 (이 폰에서 만든 사진대지)</div>${hist.length ? `<div class="mini">${hist.map((h) => `<div><span>${esc((h.date || "").slice(4, 6))}/${esc((h.date || "").slice(6, 8))} · ${esc([h.station, h.unit ? (h.kind || "") + h.unit : ""].filter(Boolean).join(" "))}</span><b>${h.count || 1}${h.cu || "개"}</b></div>`).join("")}</div>` : '<div class="note">아직 기록이 없어요</div>'}`;
   $("#stockBack").hidden = false;
 });
 $("#stockClose").onclick = () => ($("#stockBack").hidden = true);
