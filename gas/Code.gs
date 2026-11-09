@@ -5,7 +5,7 @@
 var KEY = "sdj2026"; // 분소 사람들끼리만 쓰는 간단한 암호(진짜 보안 아님, 장난 방지용)
 
 var ACC_FIELDS = ["id","date","line","station","kind","unit","type","what","cause","action","part","worker","ftype","nonrun","tRecv","tArr","tDone","note","done","updatedAt"];
-var HIST_FIELDS = ["id","ts","date","line","station","kind","unit","part","count","status"];
+var HIST_FIELDS = ["id","ts","date","line","station","kind","unit","part","count","cu","status","maker"];
 
 function getSS_() {
   var props = PropertiesService.getScriptProperties();

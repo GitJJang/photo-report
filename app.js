@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.17";
+const APP_VERSION = "2.1.18";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -532,19 +532,35 @@ function closeParts() { $("#partBack").hidden = true; partJob = null; const y = 
 $("#partClose").onclick = () => { $("#partBack").hidden = true; partJob = null; };
 $("#partBack").addEventListener("click", (e) => { if (e.target.id === "partBack") $("#partClose").click(); });
 
-/* ---------- 교체 이력 조회 (이 폰에 쌓인 기록 기준) ---------- */
+/* ---------- 교체 이력 공유(구글시트) - 역/부품/수량 글자만 오가고 사진은 절대 안 올라감 ---------- */
+const SYNC_URL = "https://script.google.com/macros/s/AKfycbxDxyIpPjhkc6CNOeclm-ByjhIiuMsaS_BfRUXk0kqCjJHDz68IDhvZwQDkZtTfK8d9eQ/exec";
+const SYNC_KEY = "sdj2026";
+function myName() {
+  let n = ""; try { n = localStorage.getItem("sdj-maker") || ""; } catch (e) {}
+  if (!n) { try { n = (prompt("이름(또는 별명)을 알려주세요. 동료들에게 '누가 만들었는지' 표시돼요.", "") || "").trim(); if (n) localStorage.setItem("sdj-maker", n); } catch (e) {} }
+  return n || "이름없음";
+}
+async function syncPost(coll, item, action) { try { await fetch(SYNC_URL, { method: "POST", body: JSON.stringify({ key: SYNC_KEY, coll, item, action }) }); } catch (e) {} }
+async function syncGet(coll) { try { const r = await fetch(`${SYNC_URL}?coll=${coll}&key=${SYNC_KEY}`).then((x) => x.json()); return r && r.ok ? r.items : []; } catch (e) { return []; } }
+
+/* ---------- 교체 이력 조회 (이 폰 + 동료 기록 함께) ---------- */
 const todayYmd = () => ymd(new Date());
 async function logHistory(ready) {
   const hist = (await idbGet("history").catch(() => null)) || [];
   const now = Date.now();
-  ready.forEach((j) => {
-    hist.push({
+  const maker = myName();
+  ready.forEach((j, i) => {
+    const rec = {
+      id: now + "-" + i + "-" + Math.floor(Math.random() * 1000),
       ts: now,
       date: /^\d{8}$/.test(j.date || "") ? j.date : todayYmd(),
       line: j.line || "", station: stationOf(j), kind: j.kind || "", unit: j.unit || "",
-      part: partOf(j), count: j.count || 1, cu: j.cu || "개", status: j.status || "",
-    });
+      part: partOf(j), count: j.count || 1, cu: j.cu || "개", status: j.status || "", maker,
+    };
+    hist.push(rec);
+    syncPost("hist", rec);
   });
+  histRemoteCache.t = 0; // 방금 만든 기록을 바로 반영
   // 최근 3000건만 보관
   await idbSet("history", hist.slice(-3000)).catch(() => {});
 }
@@ -561,8 +577,21 @@ function histDateMs(r) {
   return r.ts || 0;
 }
 let histState = { period: "month", q: "" };
+let histRows = [];
+let histRemoteCache = { t: 0, items: [] };
+async function histRemote() {
+  if (Date.now() - histRemoteCache.t < 15000) return histRemoteCache.items;
+  const items = await syncGet("hist");
+  histRemoteCache = { t: Date.now(), items };
+  return items;
+}
 async function renderHist() {
-  const all = (await idbGet("history").catch(() => null)) || [];
+  const local = (await idbGet("history").catch(() => null)) || [];
+  const remote = await histRemote();
+  const byId = new Map();
+  local.forEach((r, i) => byId.set(r.id || "local-" + i, r));
+  remote.forEach((r) => byId.set(String(r.id), r));
+  const all = [...byId.values()];
   const start = periodStart(histState.period);
   const q = histState.q.trim().toLowerCase();
   let rows = all.filter((r) => histDateMs(r) >= start);
@@ -579,13 +608,25 @@ async function renderHist() {
     `<div class="big"><div><b>${rows.length}</b><small>작업 건</small></div><div><b>${total}</b><small>부품 개수</small></div></div>` +
     `<div class="bars"><h4>역사별</h4>${bars(by((r) => r.station))}</div>` +
     `<div class="bars"><h4>부품별</h4>${bars(by((r) => r.part))}</div>`;
-  list.innerHTML = rows.map((r) => {
-    const d = r.date && /^\d{8}$/.test(r.date) ? `${r.date.slice(4, 6)}/${r.date.slice(6, 8)}` : "";
+  histRows = rows;
+  const myMaker = (() => { try { return localStorage.getItem("sdj-maker") || ""; } catch (e) { return ""; } })();
+  list.innerHTML = rows.map((r, i) => {
+    const d = r.date && /^\d{8}$/.test(String(r.date)) ? `${String(r.date).slice(4, 6)}/${String(r.date).slice(6, 8)}` : "";
     const place = [r.station, r.unit ? (r.kind || "") + r.unit : ""].filter(Boolean).join(" ");
-    const work = [r.part, (+r.count ? r.count + "개" : "")].filter(Boolean).join(" ");
-    return `<div class="hrow2"><div><b>${esc(place || "(역 미입력)")}</b><small>${esc(work)}${r.status ? " · " + esc(r.status) : ""}</small></div><span class="hwhen">${d}</span></div>`;
+    const work = [r.part, (+r.count ? r.count + (r.cu || "개") : "")].filter(Boolean).join(" ");
+    const mine = r.maker && r.maker === myMaker;
+    const who = r.maker ? `<span class="tag${mine ? " ok" : ""}" style="margin-left:4px">${esc(r.maker)}</span>` : "";
+    return `<div class="hrow2" data-i="${i}" style="cursor:pointer"><div><b>${esc(place || "(역 미입력)")}</b><small>${esc(work)}${r.status ? " · " + esc(r.status) : ""}</small></div><span class="hwhen">${d}${who}</span></div>`;
   }).join("");
 }
+$("#histList").addEventListener("click", (e) => {
+  const it = e.target.closest("[data-i]"); if (!it) return;
+  const r = histRows[+it.dataset.i]; if (!r) return;
+  const d = r.date && /^\d{8}$/.test(String(r.date)) ? `${String(r.date).slice(0, 4)}-${String(r.date).slice(4, 6)}-${String(r.date).slice(6, 8)}` : "(날짜 없음)";
+  const place = [r.station, r.unit ? (r.kind || "") + r.unit : ""].filter(Boolean).join(" ") || "(역 미입력)";
+  const lines = [`날짜: ${d}`, `노선: ${r.line || "-"}`, `역·호기: ${place}`, `부품: ${r.part || "-"}`, `수량: ${(+r.count || 1)}${r.cu || "개"}`, r.status ? `상태: ${r.status}` : "", `작성자: ${r.maker || "(표시 안 됨 - 예전 기록)"}`].filter(Boolean);
+  alert(lines.join("\n"));
+});
 $("#histPeriod").addEventListener("click", (e) => { const b = e.target.closest("[data-p]"); if (!b) return; histState.period = b.dataset.p; [...$("#histPeriod").children].forEach((x) => x.classList.toggle("on", x === b)); renderHist(); });
 $("#histQ").addEventListener("input", (e) => { histState.q = e.target.value; renderHist(); });
 
