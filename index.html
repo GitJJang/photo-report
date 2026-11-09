@@ -211,6 +211,12 @@ mark{background:#ffe58a;color:inherit;border-radius:3px;padding:0 1px}
 .dayg.today .dayh{background:var(--accent-soft)}
 .dayh .sun{color:var(--l1)} .dayh .sat{color:var(--c-chk)}
 .cal{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px;margin:0 0 12px;box-shadow:var(--sh)}
+.xltbl{border-collapse:collapse;width:max-content;min-width:100%;font-size:12px;margin-bottom:10px}
+.xltbl th,.xltbl td{border:1px solid var(--line,#ddd);padding:4px 6px;text-align:center;white-space:nowrap;vertical-align:top}
+.xltbl thead th{background:var(--panel2,#f3f4f6);font-weight:700;position:sticky;top:0}
+.xltbl thead th.sun{color:var(--l1)} .xltbl thead th.sat{color:var(--c-chk)}
+.xltbl tbody th{background:var(--panel2,#f3f4f6);position:sticky;left:0;min-width:40px}
+.xltbl td{min-width:70px;max-width:140px;white-space:normal;font-size:11px}
 .cal .cg{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
 .cal .wd{text-align:center;font:800 11px var(--font);color:var(--muted);padding:2px 0 4px}
 .cal .wd:first-child{color:var(--l1)} .cal .wd:last-child{color:var(--c-chk)}
@@ -429,7 +435,9 @@ mark{background:#ffe58a;color:inherit;border-radius:3px;padding:0 1px}
     <div class="hseg" id="planPeriod"><button data-p="today" class="on">오늘</button><button data-p="week">이번주</button><button data-p="month">이번달</button></div>
     <div class="search"><svg class="ic" viewBox="0 0 24 24"><path d="M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4"/></svg><input type="text" id="planQ" placeholder="역·작업 검색 (예: 범어, 핸드레일)" autocomplete="off" enterkeyhint="search"></div>
     <div class="chips" id="planKind"></div>
+    <div class="hseg" id="planViewSw" hidden><button data-v="cal" class="on">달력</button><button data-v="table">표(엑셀처럼)</button></div>
     <div id="planCal"></div>
+    <div id="planTable" style="overflow-x:auto"></div>
     <div id="planList"></div>
   </section>
 

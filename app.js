@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.16";
+const APP_VERSION = "2.1.17";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -893,7 +893,32 @@ document.addEventListener("focusin", (e) => {
 
 
 /* ---------- 일정 ---------- */
-const planState = { p: "today", f: "all", q: "" };
+const planState = { p: "today", f: "all", q: "", view: "cal" };
+function planTableHtml(rows, a, b) {
+  const last = b.getDate();
+  const lines = [...new Set(rows.map((x) => x.it.line).filter(Boolean))];
+  if (!lines.length) return '<div class="note">표로 볼 노선 데이터가 없어요</div>';
+  const KROWS = [["EL", "점검"], ["ES", "점검"], ["", "검사"]];
+  let html = "";
+  for (const line of lines) {
+    let body = "";
+    for (const [kind, cat] of KROWS) {
+      const label = cat === "검사" ? "검사" : kind;
+      let cells = "";
+      for (let d = 1; d <= last; d++) {
+        const hit = rows.filter((x) => x.it.line === line && x.it.cat === cat && (x.it.kind || "") === kind && x.d.getDate() === d);
+        cells += `<td>${hit.map((x) => esc(x.it.text)).join("<br>")}</td>`;
+      }
+      body += `<tr><th>${label}</th>${cells}</tr>`;
+    }
+    let head = `<th></th>`;
+    for (let d = 1; d <= last; d++) { const wd = new Date(a.getFullYear(), a.getMonth(), d).getDay(); head += `<th class="${wd === 0 ? "sun" : wd === 6 ? "sat" : ""}">${d}</th>`; }
+    html += `<div class="hsec">${esc(line)}</div><table class="xltbl"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+  const jb = rows.filter((x) => x.it.cat === "중보수");
+  if (jb.length) html += `<div class="hsec">중보수</div><div class="mini">${jb.map((x) => `<div><span>${dLabel(x.d)}</span><b>${esc(x.it.text)}</b></div>`).join("")}</div>`;
+  return html;
+}
 function planRange(p) {
   const t = today0();
   if (p === "today") return [t, t];
@@ -916,8 +941,13 @@ async function renderPlan() {
   const rows = all.filter((x) => x.d >= a && x.d <= b)
     .sort((x, y) => x.d - y.d || CATS.indexOf(x.it.cat) - CATS.indexOf(y.it.cat) || (x.it.line || "").localeCompare(y.it.line || "") || (x.it.kind || "").localeCompare(y.it.kind || ""));
   const t0 = today0().getTime();
+  $("#planViewSw").hidden = planState.p !== "month";
+  [...$("#planViewSw").children].forEach((btn) => btn.classList.toggle("on", btn.dataset.v === planState.view));
+  const tableOn = planState.p === "month" && planState.view === "table";
+  $("#planTable").innerHTML = tableOn ? planTableHtml(rows, a, b) : "";
+  $("#planTable").hidden = !tableOn;
   // 이번달: 한눈에 보는 달력
-  if (planState.p === "month") {
+  if (planState.p === "month" && !tableOn) {
     const y = a.getFullYear(), m = a.getMonth(), first = new Date(y, m, 1).getDay(), last = new Date(y, m + 1, 0).getDate();
     const byDay = {}; rows.forEach((x) => { const k = x.d.getDate(); (byDay[k] = byDay[k] || []).push(x.it.cat); });
     let cells = "일월화수목금토".split("").map((w) => `<div class="wd">${w}</div>`).join("");
@@ -929,6 +959,7 @@ async function renderPlan() {
     }
     $("#planCal").innerHTML = `<div class="cal"><div class="cg">${cells}</div><div class="lg"><span><i></i>점검</span><span><i class="c2"></i>검사</span><span><i class="c3"></i>중보수</span><span>날짜를 누르면 그날로 이동</span></div></div>`;
   } else $("#planCal").innerHTML = "";
+  if (tableOn) { $("#planList").innerHTML = ""; return; }
   if (!rows.length) { $("#planList").innerHTML = `<div class="empty">${IC.cal}이 기간·조건에 일정이 없어요${demo ? "" : "<br>다른 달 점검표는 위 ‘불러오기’에서 넣으세요."}</div>`; return; }
   const groups = []; rows.forEach((x) => { const k = x.d.getTime(); if (!groups.length || groups[groups.length - 1].k !== k) groups.push({ k, d: x.d, list: [] }); groups[groups.length - 1].list.push(x.it); });
   $("#planList").innerHTML = groups.map((g) => {
@@ -937,6 +968,7 @@ async function renderPlan() {
   }).join("");
 }
 $("#planPeriod").addEventListener("click", (e) => { const b = e.target.closest("[data-p]"); if (b) { planState.p = b.dataset.p; renderPlan(); } });
+$("#planViewSw").addEventListener("click", (e) => { const b = e.target.closest("[data-v]"); if (b) { planState.view = b.dataset.v; renderPlan(); } });
 $("#planKind").addEventListener("click", (e) => { const b = e.target.closest("[data-f]"); if (b) { planState.f = b.dataset.f; renderPlan(); } });
 $("#planQ").addEventListener("input", (e) => { planState.q = e.target.value; if (planState.q && planState.p === "today") planState.p = "month"; renderPlan(); });
 $("#planCal").addEventListener("click", (e) => { const b = e.target.closest("[data-day]"); if (!b) return; const g = document.getElementById("pd-" + b.dataset.day); if (g) g.scrollIntoView({ behavior: "smooth", block: "start" }); else toast("그날은 일정이 없어요"); });
