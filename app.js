@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.18";
+const APP_VERSION = "2.1.19";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -379,7 +379,9 @@ $("#make").onclick = async () => {
       parts.push(part);
       lines.push([xj.place, xj.work, xj.status].filter(Boolean).join(" "));
     }
-    logHistory(ready).catch(() => {});
+    const histIds = ready.map((_, i) => Date.now() + "-" + i + "-" + Math.floor(Math.random() * 1000));
+    parts.forEach((p, i) => (p.histId = histIds[i]));
+    logHistory(ready, histIds).catch(() => {});
     btn.textContent = "압축하는 중…";
     const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
     out = { blob, name: `사진대지_${ymd(new Date())}.zip`, ids: ready.map((j) => j.id), parts, sent: false, text: lines.join("\n") + "\n(사진대지 앱 등록)" };
@@ -397,12 +399,32 @@ $("#make").onclick = async () => {
 const UPLOAD_URL = "https://script.google.com/macros/s/AKfycbwk9cwL7_61WV_MBk3ya_Q0VrQRHxEAGdJbUTWTdqFi_mfEJKvQvfmAYjiRDDRwaGZH1Q/exec";
 const UPLOAD_KEY = "cD9yxhleOZCoFzlI";
 const b64 = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
+/* 업로드 응답 모양을 모르므로 흔히 쓰는 필드 이름들을 두루 확인해 링크를 뽑아낸다(없으면 그냥 undefined) */
+function extractFileLink(j) {
+  if (!j) return "";
+  const pick = (o) => o && (o.webViewLink || o.url || o.link || o.fileUrl || (o.id ? `https://drive.google.com/file/d/${o.id}/view` : ""));
+  const top = pick(j); if (top) return top;
+  if (Array.isArray(j.files) && j.files.length) return pick(j.files[0]) || "";
+  return "";
+}
+async function setHistFileUrl(id, url) {
+  if (!id || !url) return;
+  try {
+    const hist = (await idbGet("history").catch(() => null)) || [];
+    const rec = hist.find((h) => String(h.id) === String(id));
+    if (rec) { rec.fileUrl = url; await idbSet("history", hist); }
+  } catch (e) {}
+  syncPost("histlink", { id, fileUrl: url }); // 서버가 아직 지원 안 하면 조용히 무시됨(부작용 없음)
+  histRemoteCache.t = 0;
+}
 async function sendPart(part) {
   const files = [];
   for (const f of part.files) files.push({ name: f.name, kind: f.kind, type: f.type, b64: await b64(f.blob) });
   const r = await fetch(UPLOAD_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ key: UPLOAD_KEY, files }) });
   const j = await r.json().catch(() => null);
   if (!j || !j.ok) throw new Error((j && j.error) || "서버 응답 " + r.status);
+  const link = extractFileLink(j);
+  if (link && part.histId) setHistFileUrl(part.histId, link).catch(() => {});
 }
 let flushing = false;
 /* 보낼 목록(outbox)을 차례로 올린다. 인터넷이 끊기면 남겨 두고 다음에 다시 */
@@ -545,13 +567,13 @@ async function syncGet(coll) { try { const r = await fetch(`${SYNC_URL}?coll=${c
 
 /* ---------- 교체 이력 조회 (이 폰 + 동료 기록 함께) ---------- */
 const todayYmd = () => ymd(new Date());
-async function logHistory(ready) {
+async function logHistory(ready, ids) {
   const hist = (await idbGet("history").catch(() => null)) || [];
   const now = Date.now();
   const maker = myName();
   ready.forEach((j, i) => {
     const rec = {
-      id: now + "-" + i + "-" + Math.floor(Math.random() * 1000),
+      id: (ids && ids[i]) || now + "-" + i + "-" + Math.floor(Math.random() * 1000),
       ts: now,
       date: /^\d{8}$/.test(j.date || "") ? j.date : todayYmd(),
       line: j.line || "", station: stationOf(j), kind: j.kind || "", unit: j.unit || "",
@@ -625,7 +647,8 @@ $("#histList").addEventListener("click", (e) => {
   const d = r.date && /^\d{8}$/.test(String(r.date)) ? `${String(r.date).slice(0, 4)}-${String(r.date).slice(4, 6)}-${String(r.date).slice(6, 8)}` : "(날짜 없음)";
   const place = [r.station, r.unit ? (r.kind || "") + r.unit : ""].filter(Boolean).join(" ") || "(역 미입력)";
   const lines = [`날짜: ${d}`, `노선: ${r.line || "-"}`, `역·호기: ${place}`, `부품: ${r.part || "-"}`, `수량: ${(+r.count || 1)}${r.cu || "개"}`, r.status ? `상태: ${r.status}` : "", `작성자: ${r.maker || "(표시 안 됨 - 예전 기록)"}`].filter(Boolean);
-  alert(lines.join("\n"));
+  if (r.fileUrl) { if (confirm(lines.join("\n") + "\n\n사진대지 파일을 열까요?")) window.open(r.fileUrl, "_blank"); }
+  else alert(lines.join("\n"));
 });
 $("#histPeriod").addEventListener("click", (e) => { const b = e.target.closest("[data-p]"); if (!b) return; histState.period = b.dataset.p; [...$("#histPeriod").children].forEach((x) => x.classList.toggle("on", x === b)); renderHist(); });
 $("#histQ").addEventListener("input", (e) => { histState.q = e.target.value; renderHist(); });

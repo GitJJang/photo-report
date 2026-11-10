@@ -5,7 +5,7 @@
 var KEY = "sdj2026"; // 분소 사람들끼리만 쓰는 간단한 암호(진짜 보안 아님, 장난 방지용)
 
 var ACC_FIELDS = ["id","date","line","station","kind","unit","type","what","cause","action","part","worker","ftype","nonrun","tRecv","tArr","tDone","note","done","updatedAt"];
-var HIST_FIELDS = ["id","ts","date","line","station","kind","unit","part","count","cu","status","maker"];
+var HIST_FIELDS = ["id","ts","date","line","station","kind","unit","part","count","cu","status","maker","fileUrl"];
 
 function getSS_() {
   var props = PropertiesService.getScriptProperties();
@@ -58,6 +58,7 @@ function doPost(e) {
   try {
     if (body.coll === "acc") return out_(upsertAcc_(body));
     if (body.coll === "hist") return out_(addHist_(body));
+    if (body.coll === "histlink") return out_(linkHist_(body));
     return out_({ ok: false, error: "coll" });
   } finally { lock.releaseLock(); }
 }
@@ -88,4 +89,19 @@ function addHist_(body) {
   var row = HIST_FIELDS.map(function (f) { return item[f] !== undefined ? item[f] : ""; });
   sh.appendRow(row);
   return { ok: true, item: item };
+}
+
+/* 사진대지를 "사무실로 올리기"로 올린 뒤, 그 업로드 결과(드라이브 파일 링크)를 기존 교체이력 행에 덧붙인다 */
+function linkHist_(body) {
+  var sh = getSheet_("hist", HIST_FIELDS);
+  var item = body.item || {};
+  if (!item.id || !item.fileUrl) return { ok: false, error: "bad" };
+  var data = sh.getDataRange().getValues();
+  var head = data[0];
+  var col = head.indexOf("fileUrl");
+  if (col < 0) { sh.getRange(1, head.length + 1).setValue("fileUrl"); col = head.length; }
+  for (var r = 1; r < data.length; r++) {
+    if (String(data[r][0]) === String(item.id)) { sh.getRange(r + 1, col + 1).setValue(item.fileUrl); return { ok: true }; }
+  }
+  return { ok: false, error: "notfound" };
 }
