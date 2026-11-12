@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.20";
+const APP_VERSION = "2.1.21";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -197,6 +197,7 @@ function jobHtml(j, i) {
       <select data-f="status" aria-label="상태"><option value="">교체</option><option${j.status === "수선구매" ? " selected" : ""}>수선구매</option><option${j.status === "중보수" ? " selected" : ""}>중보수</option></select>
     </div>
     <div class="preview"></div>
+    <button class="btn" data-act="preview" style="margin-top:8px">🔍 사진대지 미리보기</button>
     <div class="slots">${slotHtml(j, "before", "교체 전")}${slotHtml(j, "after", "교체 후")}</div>
     <div class="warn"></div>
   </section>`;
@@ -291,6 +292,7 @@ jobsEl.addEventListener("click", (e) => {
   else if (act === "addspec") { if (j.partSpec) { j.part = (partOf(j) + " (" + j.partSpec + ")").trim(); j.partSpec = ""; const y = scrollY; renderJobs(); scrollTo(0, y); } }
   else if (act === "clearslot") { j[key] = []; renderJobs(); }
   else if (act === "adjust") openAdjust(j, key);
+  else if (act === "preview") openPreview(j);
   else if (act === "tile") {
     if (S.sel == null) return;
     const idx = S.tray.findIndex((p) => p.id === S.sel); if (idx < 0) return;
@@ -357,6 +359,19 @@ $("#adjBox").addEventListener("click", (e) => {
   cv.addEventListener("wheel", (e) => { if (!adj) return; e.preventDefault(); const t = hit(at(e)); if (t) { t.p.pan.z = Math.min(5, Math.max(0.4, t.p.pan.z * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); adjDraw(); } }, { passive: false });
 })();
 $("#adjDone").onclick = () => { $("#adjBack").hidden = true; adj = null; renderJobs(); };
+
+/* ---------- 사진대지 미리보기 (실제 양식에 들어갈 모양 그대로) ---------- */
+async function openPreview(j) {
+  const xj = xjob(j);
+  const d = /^\d{8}$/.test(j.date || "") ? `${j.date.slice(0, 4)}-${j.date.slice(4, 6)}-${j.date.slice(6, 8)}` : j.date || "";
+  $("#prevInfo").innerHTML = `<span><b>날짜</b>${esc(d)}</span><span><b>장소</b>${esc(xj.place) || "—"}</span><span><b>작업</b>${esc(xj.work) || "—"}</span>`;
+  $("#prevBack").hidden = false;
+  for (const [key, cv] of [["before", $("#prevBefore")], ["after", $("#prevAfter")]]) {
+    cv.width = 640; cv.height = Math.round(640 / ratioOf(key));
+    try { await paintSlot(cv, j, key); } catch (e) {}
+  }
+}
+$("#prevClose").onclick = () => { $("#prevBack").hidden = true; };
 
 /* ---------- 만들기·보내기 ---------- */
 const uniqueIn = (set, name) => { let n = name, k = 2; while (set.has(n)) n = name.replace(/(\.\w+)$/, ` (${k++})$1`); set.add(n); return n; };

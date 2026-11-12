@@ -358,6 +358,12 @@ mark{background:#ffe58a;color:inherit;border-radius:3px;padding:0 1px}
 .tile.has{border-style:solid;border-color:var(--line)}
 .tile.target{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
 .tile input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:0;cursor:pointer}
+.prevSheet{border:1px solid var(--line2);border-radius:var(--r2);overflow:hidden;background:#fff}
+.prevHead{padding:10px 12px;background:var(--navy-soft);font-size:13px;display:flex;flex-wrap:wrap;gap:10px}
+.prevHead b{font-weight:800}
+.prevBox{padding:8px}
+.prevBox .cap2{font-size:11px;font-weight:800;color:var(--muted);margin:6px 2px 4px}
+.prevBox canvas{width:100%;display:block;border:1px solid var(--line2);border-radius:6px}
 .slotbtns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
 .slotbtns .btn{height:38px;font-size:13px;padding:0 4px;white-space:nowrap}
 #jobs .warn{margin-top:8px;font-size:12px;color:var(--warn);font-weight:700}
@@ -509,6 +515,21 @@ mark{background:#ffe58a;color:inherit;border-radius:3px;padding:0 1px}
     <div class="adj" id="adjBox"><canvas id="adjCv"></canvas></div>
     <p class="note">사진을 <b>손가락으로 끌면 위치 이동</b>, 두 손가락으로 벌리면 확대. ＋/－/↻ 버튼은 각 사진 왼쪽 위에 있어요.</p>
     <button class="btn primary" id="adjDone">완료</button>
+  </div>
+</div>
+
+<div class="sheet-back" id="prevBack" hidden>
+  <div class="sheet">
+    <h3>사진대지 미리보기</h3>
+    <p class="note">실제로 만들어지는 사진대지 한 장이 이렇게 나와요.</p>
+    <div class="prevSheet">
+      <div class="prevHead" id="prevInfo"></div>
+      <div class="prevBox">
+        <div class="cap2">교체 전</div><canvas id="prevBefore"></canvas>
+        <div class="cap2">교체 후</div><canvas id="prevAfter"></canvas>
+      </div>
+    </div>
+    <button class="btn primary" id="prevClose">닫기</button>
   </div>
 </div>
 
