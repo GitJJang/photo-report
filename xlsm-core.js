@@ -74,9 +74,12 @@
     };
   }
 
-  /* 사진대지 한 건 만들기. crop(fileOrBlob, ratio) → Promise<Uint8Array|ArrayBuffer> (JPEG) */
+  /* 사진대지 한 건 만들기. crop(fileOrBlob, ratio) → Promise<Uint8Array|ArrayBuffer> (JPEG)
+     양식(xlsm)에는 쓰지 않는 매크로가 남아 있어서, 만들어 내는 파일에서는 그걸 지우고
+     보통 엑셀 파일(xlsx)로 내보낸다 — 매크로 보안 경고 없이 바로 열림. */
   async function buildXlsm(buf, info, job, beforeImg, afterImg, crop) {
     const zip = await g.JSZip.loadAsync(buf);
+    await stripMacro(zip);
     const drel = await zip.file(info.drawingRelsPath).async("string");
     const rels = parseRels(drel);
     let newRels = drel;
@@ -137,6 +140,26 @@
     return zip.generateAsync({ type: "uint8array", compression: "DEFLATE", compressionOptions: { level: 6 } });
   }
 
+  /* vbaProject.bin과 그에 대한 참조·Content-Type을 지워 매크로 없는 평범한 xlsx로 만든다 */
+  async function stripMacro(zip) {
+    if (!zip.files["xl/vbaProject.bin"]) return;
+    zip.remove("xl/vbaProject.bin");
+
+    let ct = await zip.file("[Content_Types].xml").async("string");
+    ct = ct.replace(/<Override PartName="\/xl\/vbaProject\.bin"[^>]*\/>/, "");
+    ct = ct.replace(
+      'ContentType="application/vnd.ms-excel.sheet.macroEnabled.main+xml"',
+      'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"'
+    );
+    zip.file("[Content_Types].xml", ct);
+
+    const relsPath = "xl/_rels/workbook.xml.rels";
+    if (zip.files[relsPath]) {
+      let rels = await zip.file(relsPath).async("string");
+      rels = rels.replace(/<Relationship\b[^>]*Target="vbaProject\.bin"[^>]*\/>/, "");
+      zip.file(relsPath, rels);
+    }
+  }
   function safeName(s) {
     return String(s).replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim();
   }
@@ -147,7 +170,7 @@
     return d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
   }
   function reportName(job) {
-    return safeName(dateOf(job) + " " + (job.place || "") + " " + (job.work || "") + (job.status ? " - " + job.status : "")) + ".xlsm";
+    return safeName(dateOf(job) + " " + (job.place || "") + " " + (job.work || "") + (job.status ? " - " + job.status : "")) + ".xlsx";
   }
   function photoName(job, k, ext) {
     return safeName(dateOf(job).slice(2) + " " + (job.place || "") + " - " + k) + "." + ext;

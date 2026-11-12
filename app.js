@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.19";
+const APP_VERSION = "2.1.20";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -374,7 +374,7 @@ $("#make").onclick = async () => {
       const name = uniqueIn(names, XlsmCore.reportName(xj));
       const xb = await XlsmCore.buildXlsm(tpl, tplInfo, xj, "before", "after", (k) => slotBytes(j, k));
       zip.file(name, xb);
-      const part = { id: uid(), label: name.replace(/\.xlsm$/, ""), files: [{ name, kind: "xlsm", type: "application/vnd.ms-excel.sheet.macroEnabled.12", blob: new Blob([xb]) }] };
+      const part = { id: uid(), label: name.replace(/\.xlsx$/, ""), files: [{ name, kind: "xlsx", type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", blob: new Blob([xb]) }] };
       [...j.before, ...j.after].forEach((p, idx) => { const pnm = uniqueIn(pn, XlsmCore.photoName(xj, idx + 1, "jpg")); zip.file("사진/" + pnm, p.blob); part.files.push({ name: pnm, kind: "photo", type: "image/jpeg", blob: p.blob }); });
       parts.push(part);
       lines.push([xj.place, xj.work, xj.status].filter(Boolean).join(" "));
