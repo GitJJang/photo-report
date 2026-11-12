@@ -85,6 +85,12 @@ function upsertAcc_(body) {
 function addHist_(body) {
   var sh = getSheet_("hist", HIST_FIELDS);
   var item = body.item || {};
+  if (body.action === "delete") {
+    if (!item.id) return { ok: false, error: "bad" };
+    var hv = sh.getDataRange().getValues();
+    for (var i = 1; i < hv.length; i++) { if (String(hv[i][0]) === String(item.id)) { sh.deleteRow(i + 1); return { ok: true }; } }
+    return { ok: false, error: "notfound" };
+  }
   if (!item.id) item.id = Date.now() + "-" + Math.floor(Math.random() * 1000);
   var row = HIST_FIELDS.map(function (f) { return item[f] !== undefined ? item[f] : ""; });
   sh.appendRow(row);
