@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.21";
+const APP_VERSION = "2.1.22";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -365,6 +365,7 @@ async function openPreview(j) {
   const xj = xjob(j);
   const d = /^\d{8}$/.test(j.date || "") ? `${j.date.slice(0, 4)}-${j.date.slice(4, 6)}-${j.date.slice(6, 8)}` : j.date || "";
   $("#prevInfo").innerHTML = `<span><b>날짜</b>${esc(d)}</span><span><b>장소</b>${esc(xj.place) || "—"}</span><span><b>작업</b>${esc(xj.work) || "—"}</span>`;
+  $("#prevMore").innerHTML = "";
   $("#prevBack").hidden = false;
   for (const [key, cv] of [["before", $("#prevBefore")], ["after", $("#prevAfter")]]) {
     cv.width = 640; cv.height = Math.round(640 / ratioOf(key));
@@ -372,6 +373,42 @@ async function openPreview(j) {
   }
 }
 $("#prevClose").onclick = () => { $("#prevBack").hidden = true; };
+/* 만든 사진대지의 미리보기용 작은 사진을 폰에 보관(최근 60건) → 나중에 이력에서 다시 볼 수 있게 */
+async function savePrev(id, j, xj) {
+  try {
+    const o = { date: j.date || "", place: xj.place || "", work: xj.work || "" };
+    for (const k of ["before", "after"]) {
+      const c = document.createElement("canvas"); c.width = 640; c.height = Math.round(640 / ratioOf(k));
+      await paintSlot(c, j, k); o[k] = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.75));
+    }
+    const m = (await idbGet("hprev").catch(() => null)) || {}; m[id] = o;
+    const ks = Object.keys(m); ks.slice(0, Math.max(0, ks.length - 60)).forEach((k) => delete m[k]);
+    await idbSet("hprev", m);
+  } catch (e) {}
+}
+const ymdDash = (s) => (/^\d{8}$/.test(String(s || "")) ? `${String(s).slice(0, 4)}-${String(s).slice(4, 6)}-${String(s).slice(6, 8)}` : String(s || ""));
+let prevList = [];
+async function showPrevRec(i) {
+  const r = prevList[i]; if (!r) return;
+  const p = ((await idbGet("hprev").catch(() => null)) || {})[r.id];
+  const place = (p && p.place) || [r.station, r.unit ? (r.kind || "") + r.unit : ""].filter(Boolean).join(" ");
+  const work = (p && p.work) || [r.part, (+r.count || 1) + (r.cu || "개"), r.status].filter(Boolean).join(" ");
+  $("#prevInfo").innerHTML = `<span><b>날짜</b>${esc(ymdDash(r.date))}</span><span><b>장소</b>${esc(place) || "—"}</span><span><b>작업</b>${esc(work) || "—"}</span>`;
+  for (const [k, cv] of [["before", $("#prevBefore")], ["after", $("#prevAfter")]]) {
+    cv.width = 640; cv.height = Math.round(640 / ratioOf(k));
+    const x = cv.getContext("2d"); x.fillStyle = "#f1f3f6"; x.fillRect(0, 0, cv.width, cv.height);
+    if (p && p[k]) { try { const bm = await createImageBitmap(p[k]); x.drawImage(bm, 0, 0, cv.width, cv.height); } catch (e) {} }
+    else { x.fillStyle = "#8a94a6"; x.font = "28px sans-serif"; x.textAlign = "center"; x.fillText(r.fileUrl ? "아래 '파일 열기'로 확인" : "사진은 만든 사람 폰에만 있어요", cv.width / 2, cv.height / 2); }
+  }
+  const nav = prevList.length > 1 ? `<div class="row" style="justify-content:center;gap:12px;margin:8px 0"><button class="btn" data-pv="${i - 1}" ${i ? "" : "disabled"}>◀</button><b>${i + 1} / ${prevList.length}</b><button class="btn" data-pv="${i + 1}" ${i < prevList.length - 1 ? "" : "disabled"}>▶</button></div>` : "";
+  $("#prevMore").innerHTML = nav + `<p class="note">${r.maker ? "작성자 " + esc(r.maker) : ""}</p>` + (r.fileUrl ? `<button class="btn" data-url="${esc(r.fileUrl)}" style="width:100%;margin-bottom:8px">📄 사무실에 올린 사진대지 파일 열기</button>` : "");
+  $("#prevBack").hidden = false;
+}
+$("#prevMore").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-pv],[data-url]"); if (!b) return;
+  if (b.dataset.url) window.open(b.dataset.url, "_blank"); else showPrevRec(+b.dataset.pv);
+});
+function openHistPrev(list, i) { prevList = list; showPrevRec(i || 0); }
 
 /* ---------- 만들기·보내기 ---------- */
 const uniqueIn = (set, name) => { let n = name, k = 2; while (set.has(n)) n = name.replace(/(\.\w+)$/, ` (${k++})$1`); set.add(n); return n; };
@@ -384,6 +421,7 @@ $("#make").onclick = async () => {
   making = true; const btn = $("#make"); btn.disabled = true;
   try {
     const zip = new JSZip(), names = new Set(), pn = new Set(), lines = [], parts = [];
+    const histIds = ready.map((_, i) => Date.now() + "-" + i + "-" + Math.floor(Math.random() * 1000));
     for (let i = 0; i < ready.length; i++) {
       const j = ready[i], xj = xjob(j); btn.textContent = `만드는 중… (${i + 1}/${ready.length})`;
       const name = uniqueIn(names, XlsmCore.reportName(xj));
@@ -392,9 +430,9 @@ $("#make").onclick = async () => {
       const part = { id: uid(), label: name.replace(/\.xlsx$/, ""), files: [{ name, kind: "xlsx", type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", blob: new Blob([xb]) }] };
       [...j.before, ...j.after].forEach((p, idx) => { const pnm = uniqueIn(pn, XlsmCore.photoName(xj, idx + 1, "jpg")); zip.file("사진/" + pnm, p.blob); part.files.push({ name: pnm, kind: "photo", type: "image/jpeg", blob: p.blob }); });
       parts.push(part);
+      await savePrev(histIds[i], j, xj);
       lines.push([xj.place, xj.work, xj.status].filter(Boolean).join(" "));
     }
-    const histIds = ready.map((_, i) => Date.now() + "-" + i + "-" + Math.floor(Math.random() * 1000));
     parts.forEach((p, i) => (p.histId = histIds[i]));
     logHistory(ready, histIds).catch(() => {});
     btn.textContent = "압축하는 중…";
@@ -461,6 +499,8 @@ $("#outUp").onclick = async () => {
   try {
     const box = (await idbGet("outbox").catch(() => null)) || [];
     await idbSet("outbox", box.concat(out.parts)); out.sent = true;
+    // 올릴 파일은 이미 보관함(outbox)에 안전하게 들어갔으니, 올린 작업의 사진·입력값은 바로 비운다
+    S.jobs = S.jobs.filter((j) => !out.ids.includes(j.id)); S.tray = []; S.sel = null; renderJobs(); renderPhotoRecent();
     b.textContent = "올리는 중…";
     const r = await flushOutbox((n, l) => (b.textContent = `올리는 중… (${l}건 남음)`));
     if (!r.left) { b.textContent = "✓ 사무실로 올렸어요"; toast(`사진대지 ${r.ok}건을 사무실로 올렸어요.`, 4000); }
@@ -627,7 +667,8 @@ async function renderHist() {
   const remote = await histRemote();
   const byId = new Map();
   local.forEach((r, i) => byId.set(r.id || "local-" + i, r));
-  remote.forEach((r) => byId.set(String(r.id), r));
+  // 서버 기록에 파일 링크가 아직 없으면 이 폰에 있는 링크를 살려 둔다
+  remote.forEach((r) => { const l = byId.get(String(r.id)) || byId.get(r.id); byId.delete(r.id); byId.set(String(r.id), l && l.fileUrl && !r.fileUrl ? { ...r, fileUrl: l.fileUrl } : r); });
   const all = [...byId.values()];
   const start = periodStart(histState.period);
   const q = histState.q.trim().toLowerCase();
@@ -658,12 +699,8 @@ async function renderHist() {
 }
 $("#histList").addEventListener("click", (e) => {
   const it = e.target.closest("[data-i]"); if (!it) return;
-  const r = histRows[+it.dataset.i]; if (!r) return;
-  const d = r.date && /^\d{8}$/.test(String(r.date)) ? `${String(r.date).slice(0, 4)}-${String(r.date).slice(4, 6)}-${String(r.date).slice(6, 8)}` : "(날짜 없음)";
-  const place = [r.station, r.unit ? (r.kind || "") + r.unit : ""].filter(Boolean).join(" ") || "(역 미입력)";
-  const lines = [`날짜: ${d}`, `노선: ${r.line || "-"}`, `역·호기: ${place}`, `부품: ${r.part || "-"}`, `수량: ${(+r.count || 1)}${r.cu || "개"}`, r.status ? `상태: ${r.status}` : "", `작성자: ${r.maker || "(표시 안 됨 - 예전 기록)"}`].filter(Boolean);
-  if (r.fileUrl) { if (confirm(lines.join("\n") + "\n\n사진대지 파일을 열까요?")) window.open(r.fileUrl, "_blank"); }
-  else alert(lines.join("\n"));
+  if (!histRows[+it.dataset.i]) return;
+  openHistPrev(histRows, +it.dataset.i);
 });
 $("#histPeriod").addEventListener("click", (e) => { const b = e.target.closest("[data-p]"); if (!b) return; histState.period = b.dataset.p; [...$("#histPeriod").children].forEach((x) => x.classList.toggle("on", x === b)); renderHist(); });
 $("#histQ").addEventListener("input", (e) => { histState.q = e.target.value; renderHist(); });
@@ -1566,15 +1603,17 @@ $("#accF").addEventListener("click", (e) => {
 });
 
 
+let recentGroups = [];
+$("#photoRecent").addEventListener("click", (e) => { const it = e.target.closest("[data-g]"); if (it && recentGroups[+it.dataset.g]) openHistPrev(recentGroups[+it.dataset.g], 0); });
 async function renderPhotoRecent() {
   const h = (await idbGet("history").catch(() => null)) || [], box = $("#photoRecent");
   const g = new Map(); h.forEach((r) => { if (!g.has(r.ts)) g.set(r.ts, []); g.get(r.ts).push(r); });
   const list = [...g.entries()].sort((a, b) => b[0] - a[0]).slice(0, 5);
   if (!list.length) { box.hidden = true; return; }
-  box.hidden = false;
-  box.innerHTML = `<div class="ph"><h2>${IC.photo}최근 만든 사진대지</h2><button class="more" data-go="stat" data-seg="hist">교체 이력 보기</button></div>` + list.map(([ts, rs]) => {
+  box.hidden = false; recentGroups = list.map(([, rs]) => rs);
+  box.innerHTML = `<div class="ph"><h2>${IC.photo}최근 만든 사진대지</h2><button class="more" data-go="stat" data-seg="hist">교체 이력 보기</button></div>` + list.map(([ts, rs], gi) => {
     const dt = new Date(ts), place = [...new Set(rs.map((r) => [r.station, r.unit ? (r.kind || "") + r.unit : ""].filter(Boolean).join(" ")))].join(", ");
-    return `<div class="rr"><div class="rd">${dt.getMonth() + 1}/${dt.getDate()}</div><div class="rm"><b>${esc(place || "(역 미입력)")}</b><small>${esc([...new Set(rs.map((r) => r.part).filter(Boolean))].join(", ") || "부품 미입력")} · ${rs.length}건</small></div></div>`;
+    return `<div class="rr" data-g="${gi}" style="cursor:pointer"><div class="rd">${dt.getMonth() + 1}/${dt.getDate()}</div><div class="rm"><b>${esc(place || "(역 미입력)")}</b><small>${esc([...new Set(rs.map((r) => r.part).filter(Boolean))].join(", ") || "부품 미입력")} · ${rs.length}건</small></div></div>`;
   }).join("");
 }
 
