@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.23";
+const APP_VERSION = "2.1.24";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -619,7 +619,7 @@ function myName() {
   return n || "이름없음";
 }
 async function syncPost(coll, item, action) { try { await fetch(SYNC_URL, { method: "POST", body: JSON.stringify({ key: SYNC_KEY, coll, item, action }) }); } catch (e) {} }
-async function syncGet(coll) { try { const r = await fetch(`${SYNC_URL}?coll=${coll}&key=${SYNC_KEY}`).then((x) => x.json()); return r && r.ok ? r.items : []; } catch (e) { return []; } }
+async function syncGet(coll) { try { const ac = new AbortController(), t = setTimeout(() => ac.abort(), 10000); const r = await fetch(`${SYNC_URL}?coll=${coll}&key=${SYNC_KEY}`, { signal: ac.signal }).then((x) => x.json()); clearTimeout(t); return r && r.ok ? r.items : null; } catch (e) { return null; } }
 
 /* ---------- 교체 이력 조회 (이 폰 + 동료 기록 함께) ---------- */
 const todayYmd = () => ymd(new Date());
@@ -660,12 +660,19 @@ let histRemoteCache = { t: 0, items: [] };
 async function histRemote() {
   if (Date.now() - histRemoteCache.t < 15000) return histRemoteCache.items;
   const items = await syncGet("hist");
+  if (!items) return histRemoteCache.items; // 서버 응답이 없으면 이 폰 기록만 보여주고 다음에 다시 시도
   histRemoteCache = { t: Date.now(), items };
   return items;
 }
+let histSeq = 0;
 async function renderHist() {
+  const my = ++histSeq;
   const local = (await idbGet("history").catch(() => null)) || [];
-  const remote = await histRemote();
+  const fresh = Date.now() - histRemoteCache.t < 15000;
+  drawHist(local, histRemoteCache.items); // 서버를 기다리지 않고 이 폰 기록부터 바로 표시
+  if (!fresh) { const rem = await histRemote(); if (my === histSeq) drawHist(local, rem); }
+}
+function drawHist(local, remote) {
   const byId = new Map();
   local.forEach((r, i) => byId.set(r.id || "local-" + i, r));
   // 서버 기록에 파일 링크가 아직 없으면 이 폰에 있는 링크를 살려 둔다
