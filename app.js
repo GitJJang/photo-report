@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.22";
+const APP_VERSION = "2.1.23";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -444,6 +444,7 @@ $("#make").onclick = async () => {
     $("#outFile").textContent = `'${out.name}'`;
     $("#outShare").hidden = !(navigator.canShare && out.photos.length && navigator.canShare({ files: out.photos }));
     $("#outUp").disabled = false; $("#outUp").textContent = "① 사무실로 올리기";
+    S.tray = []; S.sel = null; // 받은 사진함은 사진대지를 만들면 비운다
     $("#outBack").hidden = false;
   } catch (e) { toast("만들지 못했어요: " + (e.message || e)); }
   finally { making = false; btn.disabled = false; renderJobs(); }
