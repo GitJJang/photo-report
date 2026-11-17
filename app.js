@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.24";
+const APP_VERSION = "2.1.25";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -441,8 +441,6 @@ $("#make").onclick = async () => {
     $("#outInfo").textContent = `사진대지 ${ready.length}건 + 이름 바꾼 사진이 압축파일 하나에 들어 있어요. (${(blob.size / 1048576).toFixed(1)}MB)`;
     // 안드로이드 크롬은 zip·엑셀 파일 공유를 막는다(사진·pdf 등만 허용) → 압축파일은 저장 후 카톡에서 첨부
     out.photos = ready.flatMap((j) => { const xj = xjob(j), pn2 = new Set(); return [...j.before, ...j.after].map((p, idx) => new File([p.blob], uniqueIn(pn2, XlsmCore.photoName(xj, idx + 1, "jpg")), { type: "image/jpeg" })); });
-    $("#outFile").textContent = `'${out.name}'`;
-    $("#outShare").hidden = !(navigator.canShare && out.photos.length && navigator.canShare({ files: out.photos }));
     $("#outUp").disabled = false; $("#outUp").textContent = "① 사무실로 올리기";
     S.tray = []; S.sel = null; // 받은 사진함은 사진대지를 만들면 비운다
     $("#outBack").hidden = false;
@@ -513,15 +511,19 @@ async function autoFlush() {
   const r = await flushOutbox(); if (r && r.ok) toast(`대기 중이던 사진대지 ${r.ok}건을 사무실로 올렸어요.${r.left ? ` (${r.left}건 남음)` : ""}`, 5000);
 }
 window.addEventListener("online", autoFlush);
-$("#outShare").onclick = () => {
-  if (!out || !out.photos) return;
-  navigator.share({ files: out.photos }).catch((e) => { if (e.name !== "AbortError") toast("보내지 못했어요 (" + e.name + ": " + e.message + ")", 6000); });
+$("#outShare").onclick = async () => {
+  if (!out) return;
+  // 카톡은 사진과 같이 보낸 글자를 빼는 경우가 있어서, 문구는 클립보드에도 복사해 둔다 → 입력창에 붙여넣기
+  let copied = false; try { await navigator.clipboard.writeText(out.text); copied = true; } catch (e) {}
+  const canFiles = navigator.canShare && out.photos && out.photos.length && navigator.canShare({ files: out.photos });
+  if (!canFiles) { toast(copied ? "문구를 복사했어요. 사진은 '폰에 저장'으로 받아 보내세요." : "공유할 수 없어요. '폰에 저장'을 이용하세요.", 5000); return; }
+  try { await navigator.share({ files: out.photos, text: out.text }); if (copied) toast("문구도 복사돼 있어요. 글자가 안 보이면 입력창에 붙여넣으세요.", 5000); }
+  catch (e) { if (e.name !== "AbortError") toast("보내지 못했어요 (" + e.name + ": " + e.message + ")", 6000); }
 };
 $("#outSave").onclick = () => {
   if (!out) return; const a = document.createElement("a"); a.href = URL.createObjectURL(out.blob); a.download = out.name; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); toast("저장했어요. 이제 카톡 대화방 ＋ → 파일 → 다운로드에서 보내세요.", 5000);
 };
-$("#outCopy").onclick = async () => { try { await navigator.clipboard.writeText(out.text); toast("복사했어요. 단톡방에 붙여넣으세요."); } catch (e) { toast("복사하지 못했어요."); } };
 $("#outClear").onclick = (e) => {
   const b = e.currentTarget; if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "정말 지울까요? 한 번 더 누르세요"; setTimeout(() => { b.dataset.sure = ""; b.textContent = "보낸 작업 지우기"; }, 4000); return; }
   b.dataset.sure = ""; b.textContent = "보낸 작업 지우기";
