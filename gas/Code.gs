@@ -85,11 +85,22 @@ function upsertAcc_(body) {
 function addHist_(body) {
   var sh = getSheet_("hist", HIST_FIELDS);
   var item = body.item || {};
-  if (body.action === "delete") {
+  if (body.action === "delete" || body.action === "update") {
     if (!item.id) return { ok: false, error: "bad" };
-    var hv = sh.getDataRange().getValues();
-    for (var i = 1; i < hv.length; i++) { if (String(hv[i][0]) === String(item.id)) { sh.deleteRow(i + 1); return { ok: true }; } }
-    return { ok: false, error: "notfound" };
+    var hv = sh.getDataRange().getValues(), hit = [];
+    for (var i = 1; i < hv.length; i++) { if (String(hv[i][0]) === String(item.id)) hit.push(i + 1); }
+    if (body.action === "delete") {
+      if (!hit.length) return { ok: false, error: "notfound" };
+      for (var d = hit.length - 1; d >= 0; d--) sh.deleteRow(hit[d]);
+      return { ok: true };
+    }
+    if (hit.length) {
+      var urow = HIST_FIELDS.map(function (f) { return item[f] !== undefined ? item[f] : ""; });
+      if (item.fileUrl === undefined) { var fc = hv[0].indexOf("fileUrl"); if (fc >= 0) urow[HIST_FIELDS.indexOf("fileUrl")] = hv[hit[0] - 1][fc]; }
+      sh.getRange(hit[0], 1, 1, urow.length).setValues([urow]);
+      for (var e = hit.length - 1; e >= 1; e--) sh.deleteRow(hit[e]); // 같은 id가 중복돼 있으면 정리
+      return { ok: true };
+    }
   }
   if (!item.id) item.id = Date.now() + "-" + Math.floor(Math.random() * 1000);
   var row = HIST_FIELDS.map(function (f) { return item[f] !== undefined ? item[f] : ""; });

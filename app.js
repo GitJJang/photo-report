@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.26";
+const APP_VERSION = "2.1.27";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -366,6 +366,7 @@ async function openPreview(j) {
   const d = /^\d{8}$/.test(j.date || "") ? `${j.date.slice(0, 4)}-${j.date.slice(4, 6)}-${j.date.slice(6, 8)}` : j.date || "";
   $("#prevInfo").innerHTML = `<span><b>날짜</b>${esc(d)}</span><span><b>장소</b>${esc(xj.place) || "—"}</span><span><b>작업</b>${esc(xj.work) || "—"}</span>`;
   $("#prevMore").innerHTML = "";
+  $("#prevAct").innerHTML = `<button class="btn" id="prevToCard" data-id="${j.id}">✏️ 이 작업 카드에서 수정</button>`;
   $("#prevBack").hidden = false;
   for (const [key, cv] of [["before", $("#prevBefore")], ["after", $("#prevAfter")]]) {
     cv.width = 640; cv.height = Math.round(640 / ratioOf(key));
@@ -401,6 +402,7 @@ async function showPrevRec(i) {
     else { x.fillStyle = "#8a94a6"; x.font = "28px sans-serif"; x.textAlign = "center"; x.fillText(r.fileUrl ? "아래 '파일 열기'로 확인" : "사진은 만든 사람 폰에만 있어요", cv.width / 2, cv.height / 2); }
   }
   const nav = prevList.length > 1 ? `<div class="row" style="justify-content:center;gap:12px;margin:8px 0"><button class="btn" data-pv="${i - 1}" ${i ? "" : "disabled"}>◀</button><b>${i + 1} / ${prevList.length}</b><button class="btn" data-pv="${i + 1}" ${i < prevList.length - 1 ? "" : "disabled"}>▶</button></div>` : "";
+  $("#prevAct").innerHTML = `<button class="btn" data-act="edit" data-i="${i}">✏️ 수정</button><button class="btn danger" data-act="del" data-i="${i}">🗑 삭제</button>`;
   $("#prevMore").innerHTML = nav + `<p class="note">${r.maker ? "작성자 " + esc(r.maker) : ""}</p>` + (r.fileUrl ? `<button class="btn" data-url="${esc(r.fileUrl)}" style="width:100%;margin-bottom:8px">📄 사무실에 올린 사진대지 파일 열기</button>` : "");
   $("#prevBack").hidden = false;
 }
@@ -408,7 +410,42 @@ $("#prevMore").addEventListener("click", (e) => {
   const b = e.target.closest("[data-pv],[data-url]"); if (!b) return;
   if (b.dataset.url) window.open(b.dataset.url, "_blank"); else showPrevRec(+b.dataset.pv);
 });
-function openHistPrev(list, i) { prevList = list; showPrevRec(i || 0); }
+function openHistPrev(list, i) { prevList = list.slice(); showPrevRec(i || 0); }
+$("#prevAct").addEventListener("click", async (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.id === "prevToCard") { $("#prevBack").hidden = true; const c = document.querySelector(`.card[data-id="${b.dataset.id}"]`); if (c) c.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+  const i = +b.dataset.i, r = prevList[i]; if (!r) return;
+  if (b.dataset.act === "edit") return openEdit(i);
+  if (b.dataset.act === "del") {
+    if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "정말 삭제? 한 번 더 누르세요"; setTimeout(() => { b.dataset.sure = ""; b.textContent = "🗑 삭제"; }, 3500); return; }
+    await deleteHistRec(r); prevList.splice(i, 1);
+    if (prevList.length) showPrevRec(Math.min(i, prevList.length - 1)); else $("#prevBack").hidden = true;
+    renderHist(); renderPhotoRecent(); toast("삭제했어요. 다른 폰에도 반영돼요.", 3500);
+  }
+});
+let editIdx = -1;
+function openEdit(i) {
+  const r = prevList[i]; if (!r) return; editIdx = i;
+  $("#eLine").innerHTML = ((DATA.lines || []).map((l) => l.name)).concat(r.line && !(DATA.lines || []).some((l) => l.name === r.line) ? [r.line] : []).map((n) => `<option${n === r.line ? " selected" : ""}>${esc(n)}</option>`).join("");
+  $("#eStnList").innerHTML = [...new Set((DATA.lines || []).flatMap((l) => l.stations || []))].map((n) => `<option value="${esc(n)}">`).join("");
+  $("#ePartList").innerHTML = [...new Set((PARTS || []).map((p) => p.n))].slice(0, 800).map((n) => `<option value="${esc(n)}">`).join("");
+  $("#eDate").value = /^\d{8}$/.test(String(r.date || "")) ? `${r.date.slice(0, 4)}-${r.date.slice(4, 6)}-${r.date.slice(6, 8)}` : "";
+  $("#eStn").value = r.station || ""; $("#eKind").value = r.kind || ""; $("#eUnit").value = r.unit || "";
+  $("#ePart").value = r.part || ""; $("#eCnt").value = r.count || 1; $("#eCu").value = r.cu || "개"; $("#eStat").value = r.status || "";
+  $("#eNote").textContent = "기록(역·부품·개수 등)만 바뀌어요. 이미 사무실에 올린 사진대지 파일은 그대로예요." + (r.maker ? ` · 작성자 ${r.maker}` : "");
+  $("#editBack").hidden = false;
+}
+$("#eCancel").onclick = () => ($("#editBack").hidden = true);
+$("#eSave").onclick = async () => {
+  const r = prevList[editIdx]; if (!r) return;
+  const stn = $("#eStn").value.trim(), part = $("#ePart").value.trim(), cnt = parseInt($("#eCnt").value, 10), date = $("#eDate").value.replace(/-/g, "");
+  if (!/^\d{8}$/.test(date)) return toast("날짜를 골라 주세요.");
+  if (!stn) return toast("역을 입력해 주세요.");
+  if (!part) return toast("부품을 입력해 주세요.");
+  if (!(cnt >= 1)) return toast("개수는 1 이상으로 넣어 주세요.");
+  const rec = await saveHistEdit(r, { date, line: $("#eLine").value, station: stn, kind: $("#eKind").value, unit: $("#eUnit").value.trim(), part, count: cnt, cu: $("#eCu").value.trim() || "개", status: $("#eStat").value.trim() });
+  prevList[editIdx] = rec; $("#editBack").hidden = true; showPrevRec(editIdx); renderHist(); renderPhotoRecent(); toast("수정했어요. 다른 폰에도 반영돼요.", 3500);
+};
 
 /* ---------- 만들기·보내기 ---------- */
 const uniqueIn = (set, name) => { let n = name, k = 2; while (set.has(n)) n = name.replace(/(\.\w+)$/, ` (${k++})$1`); set.add(n); return n; };
@@ -666,6 +703,49 @@ async function histRemote() {
   histRemoteCache = { t: Date.now(), items };
   return items;
 }
+/* ---------- 교체 이력 수정·삭제 (이 폰 + 서버 연동, 인터넷 안 되면 대기열에 두었다가 자동 재전송) ---------- */
+const loadJ = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
+const saveJ = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const HFIELDS = ["id", "ts", "date", "line", "station", "kind", "unit", "part", "count", "cu", "status", "maker", "fileUrl"];
+const pickH = (r) => { const o = {}; HFIELDS.forEach((f) => { if (r[f] !== undefined && f !== "fileUrl") o[f] = r[f]; }); if (r.fileUrl) o.fileUrl = r.fileUrl; return o; };
+let hqBusy = false;
+function queueHistOp(op, item) {
+  const q = loadJ("sdj-hq", []).filter((o) => String(o.item.id) !== String(item.id) || (op === "update" && o.op === "delete"));
+  q.push({ op, item }); saveJ("sdj-hq", q.slice(-200)); flushHistQ();
+}
+async function flushHistQ() {
+  if (hqBusy || !navigator.onLine) return; hqBusy = true;
+  try {
+    let q = loadJ("sdj-hq", []);
+    while (q.length) {
+      const o = q[0]; let ok = false;
+      try { const j = await fetch(SYNC_URL, { method: "POST", body: JSON.stringify({ key: SYNC_KEY, coll: "hist", action: o.op, item: o.item }) }).then((x) => x.json()); ok = !!(j && (j.ok || j.error === "notfound")); } catch (e) {}
+      if (!ok) break;
+      q = loadJ("sdj-hq", []).filter((x) => !(x.op === o.op && String(x.item.id) === String(o.item.id) && JSON.stringify(x.item) === JSON.stringify(o.item))); saveJ("sdj-hq", q);
+    }
+  } finally { hqBusy = false; histRemoteCache.t = 0; }
+}
+window.addEventListener("online", flushHistQ);
+const histPlace = (r) => [r.station, r.unit ? (r.kind || "") + r.unit : ""].filter(Boolean).join(" ");
+const histWork = (r) => [r.part, (+r.count || 1) + (r.cu || "개"), r.status].filter(Boolean).join(" ");
+async function saveHistEdit(old, patch) {
+  const rec = { ...old, ...patch }; delete rec._ed;
+  const hist = (await idbGet("history").catch(() => null)) || [], mine = hist.find((x) => String(x.id) === String(rec.id));
+  if (mine) { Object.assign(mine, patch); await idbSet("history", hist); }
+  const m = (await idbGet("hprev").catch(() => null)) || {};
+  if (m[rec.id]) { m[rec.id].date = rec.date; m[rec.id].place = histPlace(rec); m[rec.id].work = histWork(rec); await idbSet("hprev", m); }
+  const ed = loadJ("sdj-hedit", {}); ed[rec.id] = pickH(rec); const ks = Object.keys(ed); ks.slice(0, Math.max(0, ks.length - 120)).forEach((k) => delete ed[k]); saveJ("sdj-hedit", ed);
+  queueHistOp("update", pickH(rec));
+  return rec;
+}
+async function deleteHistRec(r) {
+  const hist = (await idbGet("history").catch(() => null)) || [];
+  await idbSet("history", hist.filter((x) => String(x.id) !== String(r.id)));
+  const m = (await idbGet("hprev").catch(() => null)) || {}; if (m[r.id]) { delete m[r.id]; await idbSet("hprev", m); }
+  const del = loadJ("sdj-hdel", []); del.push(String(r.id)); saveJ("sdj-hdel", del.slice(-300));
+  const ed = loadJ("sdj-hedit", {}); if (ed[r.id]) { delete ed[r.id]; saveJ("sdj-hedit", ed); }
+  queueHistOp("delete", { id: r.id });
+}
 let histSeq = 0;
 async function renderHist() {
   const my = ++histSeq;
@@ -678,7 +758,10 @@ function drawHist(local, remote) {
   const byId = new Map();
   local.forEach((r, i) => byId.set(r.id || "local-" + i, r));
   // 서버 기록에 파일 링크가 아직 없으면 이 폰에 있는 링크를 살려 둔다
-  remote.forEach((r) => { const l = byId.get(String(r.id)) || byId.get(r.id); byId.delete(r.id); byId.set(String(r.id), l && l.fileUrl && !r.fileUrl ? { ...r, fileUrl: l.fileUrl } : r); });
+  remote.forEach((r) => { if (!r.date && !r.station && !r.part) { byId.delete(String(r.id)); byId.delete(r.id); return; } const l = byId.get(String(r.id)) || byId.get(r.id); byId.delete(r.id); byId.set(String(r.id), l && l.fileUrl && !r.fileUrl ? { ...r, fileUrl: l.fileUrl } : r); });
+  const ed = loadJ("sdj-hedit", {}), del = new Set(loadJ("sdj-hdel", []).map(String));
+  del.forEach((id) => byId.delete(id));
+  Object.keys(ed).forEach((id) => { if (byId.has(id)) byId.set(id, { ...byId.get(id), ...ed[id] }); });
   const all = [...byId.values()];
   const start = periodStart(histState.period);
   const q = histState.q.trim().toLowerCase();
@@ -1692,6 +1775,6 @@ async function init() {
   $("#foot").textContent = `버전 ${APP_VERSION}`;
   // 앱을 열 때는 항상 홈부터 (사진 공유로 들어온 경우만 사진대지)
   showTab(location.search.includes("shared") ? "photo" : "home");
-  autoFlush();
+  autoFlush(); flushHistQ();
 }
 init();

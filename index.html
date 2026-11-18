@@ -216,6 +216,9 @@ mark{background:#ffe58a;color:inherit;border-radius:3px;padding:0 1px}
 .xltbl.xlfit{table-layout:fixed;min-width:0}.xltbl.xlfit td{min-width:0;max-width:none;overflow-wrap:anywhere}.xltbl.xlfit th,.xltbl.xlfit td{padding:3px 2px}
 .hday{background:var(--card);border:1px solid var(--line);border-radius:var(--r2);margin:0 0 8px;overflow:hidden}
 .hdh{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:52px;padding:0 14px;cursor:pointer;font:800 16px var(--font);color:var(--ink);-webkit-tap-highlight-color:transparent;user-select:none}
+.hbtns{display:flex;gap:8px;margin:6px 0 10px}.hbtns .btn{flex:1}
+.fld{display:block;font:700 12px var(--font);color:var(--muted);margin:10px 0 4px}.fld input,.fld select{margin-top:4px;font-weight:400}
+#editBack .sheet{max-height:92vh;overflow-y:auto}
 .hdh:active{background:var(--navy-soft)}
 .hcnt{height:26px;padding:0 10px;border-radius:13px;font-size:13px;background:var(--navy-soft);color:var(--navy2)}
 .hdbody{padding:0 14px 10px}
@@ -532,6 +535,7 @@ mark{background:#ffe58a;color:inherit;border-radius:3px;padding:0 1px}
   <div class="sheet">
     <h3>사진대지 미리보기</h3>
     <p class="note">실제로 만들어지는 사진대지 한 장이 이렇게 나와요.</p>
+    <div id="prevAct" class="hbtns"></div>
     <div class="prevSheet">
       <div class="prevHead" id="prevInfo"></div>
       <div class="prevBox">
@@ -554,6 +558,22 @@ mark{background:#ffe58a;color:inherit;border-radius:3px;padding:0 1px}
     <button class="btn" id="outShare">사진 + 문구 보내기</button>
     <button class="btn danger" id="outClear">보낸 건 사진 비우기</button>
     <button class="btn" id="outClose">닫기</button>
+  </div>
+</div>
+
+<div class="sheet-back" id="editBack" hidden>
+  <div class="sheet">
+    <h3>교체 기록 수정</h3>
+    <label class="fld">날짜<input type="date" id="eDate"></label>
+    <label class="fld">노선<select id="eLine"></select></label>
+    <label class="fld">역<input type="text" id="eStn" list="eStnList" autocomplete="off"></label><datalist id="eStnList"></datalist>
+    <div class="hbtns"><label class="fld" style="flex:1">구분<select id="eKind"><option>EL</option><option>ES</option><option value="">(없음)</option></select></label><label class="fld" style="flex:1">호기<input type="text" id="eUnit" inputmode="numeric" autocomplete="off"></label></div>
+    <label class="fld">부품<input type="text" id="ePart" list="ePartList" autocomplete="off"></label><datalist id="ePartList"></datalist>
+    <div class="hbtns"><label class="fld" style="flex:1">개수<input type="text" id="eCnt" inputmode="numeric" autocomplete="off"></label><label class="fld" style="flex:1">단위<input type="text" id="eCu" autocomplete="off"></label></div>
+    <label class="fld">상태·메모<input type="text" id="eStat" autocomplete="off"></label>
+    <p class="note" id="eNote"></p>
+    <button class="btn primary" id="eSave">저장</button>
+    <button class="btn" id="eCancel">취소</button>
   </div>
 </div>
 
