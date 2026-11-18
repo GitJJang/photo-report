@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.28";
+const APP_VERSION = "2.1.29";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -965,8 +965,8 @@ const IC = {
   box: '<svg class="ic" viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8"/></svg>',
 };
 const catIc = { "점검": IC.chk, "검사": IC.ins, "중보수": IC.rep, "수선": IC.rep };
-/* "동대구4 상좌" → "동대구4(상좌)", "해안2좌4우" → "해안2(좌)4(우)" — 표시만 바꾸고 원본은 그대로 */
-const fmtLR = (t) => String(t || "").replace(/(\d)\s*((?:상|하)?[좌우])(?![가-힣)])/g, "$1($2)");
+/* "동대구4 상좌" → "동대구4 상(좌)", "해안2좌4우" → "해안2(좌)4(우)" — 표시만 바꾸고 원본은 그대로 */
+const fmtLR = (t) => String(t || "").replace(/(\d)\s*(상|하)?([좌우])(?![가-힣)])/g, (m, d, ud, lr) => `${d}${ud ? " " + ud : ""}(${lr})`);
 const planRow = (it) => `<div class="prow2 ${lineCls[it.line] || ""}"><span class="bar4"></span><div class="pm"><div class="pt"><span class="cat ${catCls[it.cat] || "c1"}">${catIc[it.cat] || ""}${esc(it.cat)}</span>${it.line ? `<span>${esc(it.line)} ${esc(it.kind || "")}</span>` : ""}</div><div class="px stn">${stnHtml(fmtLR(it.text))}</div></div></div>`;
 let homeCt = (() => { try { return localStorage.getItem("sdj-ct") || "1호선"; } catch (e) { return "1호선"; } })();
 async function renderHome() {
