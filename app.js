@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.29";
+const APP_VERSION = "2.1.30";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -749,6 +749,8 @@ async function saveHistEdit(old, patch) {
   return rec;
 }
 async function deleteHistRec(r) {
+  const tr = loadJ("sdj-htrash", []).filter((x) => String(x.rec.id) !== String(r.id)); tr.push({ rec: pickH(r), at: Date.now() }); saveJ("sdj-htrash", tr.slice(-100));
+  saveJ("sdj-hrest", loadJ("sdj-hrest", []).filter((x) => x !== String(r.id)));
   const hist = (await idbGet("history").catch(() => null)) || [];
   await idbSet("history", hist.filter((x) => String(x.id) !== String(r.id)));
   const m = (await idbGet("hprev").catch(() => null)) || {}; if (m[r.id]) { delete m[r.id]; await idbSet("hprev", m); }
@@ -768,9 +770,17 @@ function drawHist(local, remote) {
   const byId = new Map();
   local.forEach((r, i) => byId.set(r.id || "local-" + i, r));
   // 서버 기록에 파일 링크가 아직 없으면 이 폰에 있는 링크를 살려 둔다
-  remote.forEach((r) => { if (!r.date && !r.station && !r.part) { byId.delete(String(r.id)); byId.delete(r.id); return; } const l = byId.get(String(r.id)) || byId.get(r.id); byId.delete(r.id); byId.set(String(r.id), l && l.fileUrl && !r.fileUrl ? { ...r, fileUrl: l.fileUrl } : r); });
+  const rest = new Set(loadJ("sdj-hrest", [])), lastFull = new Map(), delMap = new Map();
+  remote.forEach((r) => { const id = String(r.id); if (!r.date && !r.station && !r.part) { if (rest.has(id)) return; if (lastFull.has(id)) delMap.set(id, lastFull.get(id)); byId.delete(id); byId.delete(r.id); return; } lastFull.set(id, r); delMap.delete(id); const l = byId.get(String(r.id)) || byId.get(r.id); byId.delete(r.id); byId.set(String(r.id), l && l.fileUrl && !r.fileUrl ? { ...r, fileUrl: l.fileUrl } : r); });
+  // 서버에 되돌린 내용이 이미 반영된 id는 '되돌림 중' 표시를 정리
+  const restAll = loadJ("sdj-hrest", []); if (restAll.length) { const keep = restAll.filter((id) => { const rows = remote.filter((x) => String(x.id) === id), last = rows[rows.length - 1]; return !(last && (last.date || last.station || last.part)); }); if (keep.length !== restAll.length) saveJ("sdj-hrest", keep); }
   const ed = loadJ("sdj-hedit", {}), del = new Set(loadJ("sdj-hdel", []).map(String));
-  del.forEach((id) => byId.delete(id));
+  const trash = loadJ("sdj-htrash", []);
+  del.forEach((id) => { const o = byId.get(id) || lastFull.get(id) || (trash.find((t) => String(t.rec.id) === id) || {}).rec; if (o) delMap.set(id, o); byId.delete(id); });
+  [...delMap.keys()].forEach((id) => { if (byId.has(id) && !del.has(id)) delMap.delete(id); });
+  histDeleted = delMap;
+  const trashHtml = delMap.size ? (() => { const open = histOpen.has("__trash"); const arr = [...delMap.values()].sort((a, b) => histDateMs(b) - histDateMs(a)).slice(0, 50);
+    return `<div class="hday trash${open ? " open" : ""}"><div class="hdh" data-dh="__trash" role="button"><span>🗑 최근 삭제</span><span class="tag hcnt" style="background:var(--line);color:var(--muted)">${delMap.size}건</span></div>${open ? `<div class="hdbody">${arr.map((r) => `<div class="hit trs"><span>${esc(ymdDash(r.date).slice(5).replace("-", "/"))} · ${esc([histPlace(r) || "(역 미입력)", [r.part, (+r.count || 1) + (r.cu || "개")].filter(Boolean).join(" ")].join(" "))}</span><button class="btn" data-rs="${esc(String(r.id))}">되돌리기</button></div>`).join("")}</div>` : ""}</div>`; })() : "";
   Object.keys(ed).forEach((id) => { if (byId.has(id)) byId.set(id, { ...byId.get(id), ...ed[id] }); });
   const all = [...byId.values()];
   const start = periodStart(histState.period);
@@ -780,8 +790,8 @@ function drawHist(local, remote) {
   rows.sort((a, b) => histDateMs(b) - histDateMs(a) || b.ts - a.ts);
 
   const sum = $("#histSum"), list = $("#histList");
-  if (!all.length) { sum.innerHTML = '<div class="empty">아직 기록이 없어요<br>사진대지를 만들면 역·호기·부품·개수가 한 건씩 쌓여요.</div>'; list.innerHTML = ""; return; }
-  if (!rows.length) { sum.innerHTML = '<div class="empty">해당 조건에 기록이 없어요<br>기간이나 검색어를 바꿔 보세요.</div>'; list.innerHTML = ""; return; }
+  if (!all.length) { sum.innerHTML = '<div class="empty">아직 기록이 없어요<br>사진대지를 만들면 역·호기·부품·개수가 한 건씩 쌓여요.</div>'; list.innerHTML = trashHtml; return; }
+  if (!rows.length) { sum.innerHTML = '<div class="empty">해당 조건에 기록이 없어요<br>기간이나 검색어를 바꿔 보세요.</div>'; list.innerHTML = trashHtml; return; }
   const total = rows.reduce((n, r) => n + (+r.count || 1), 0);
   const by = (key) => { const m = new Map(); rows.forEach((r) => { const k = key(r) || "(미입력)"; m.set(k, (m.get(k) || 0) + (+r.count || 1)); }); return [...m.entries()].sort((a, b) => b[1] - a[1]); };
   const bars = (arr) => { const mx = arr[0] ? arr[0][1] : 1; return arr.slice(0, 6).map(([k, n]) => `<div class="brow"><span>${esc(k)}</span><i style="width:${Math.max(6, Math.round((n / mx) * 100))}%"></i><em>${n}</em></div>`).join(""); };
@@ -804,10 +814,24 @@ function drawHist(local, remote) {
       return `<div class="hit" data-i="${i}">${esc([place || "(역 미입력)", work].filter(Boolean).join(" "))}</div>`;
     }).join("")}</div>` : "";
     return `<div class="hday${open ? " open" : ""}"><div class="hdh" data-dh="${g.k}" role="button" aria-expanded="${open}"><span>${dayLabel(g.k)}</span><span class="tag hcnt">${g.items.length}건</span></div>${items}</div>`;
-  }).join("");
+  }).join("") + trashHtml;
+}
+let histDeleted = new Map();
+async function restoreHist(id) {
+  const r = histDeleted.get(String(id)); if (!r) return;
+  const rec = pickH(r);
+  saveJ("sdj-hdel", loadJ("sdj-hdel", []).filter((x) => String(x) !== String(id)));
+  const tr = loadJ("sdj-htrash", []), t = tr.find((x) => String(x.rec.id) === String(id));
+  saveJ("sdj-htrash", tr.filter((x) => x !== t));
+  const rs = loadJ("sdj-hrest", []); if (!rs.includes(String(id))) rs.push(String(id)); saveJ("sdj-hrest", rs.slice(-200));
+  if (t) { const hist = (await idbGet("history").catch(() => null)) || []; if (!hist.some((x) => String(x.id) === String(id))) { hist.push({ ...t.rec }); await idbSet("history", hist); } }
+  histRemoteCache.items = histRemoteCache.items.concat([normHist(rec)]); // 서버 반영 전에도 바로 보이게
+  queueHistOp("update", rec);
+  renderHist(); renderPhotoRecent(); toast("되돌렸어요. 다른 폰에도 다시 보여요.", 3500);
 }
 let histOpen = new Set(); try { histOpen = new Set(JSON.parse(localStorage.getItem("sdj-hopen") || "[]")); } catch (e) {}
 $("#histList").addEventListener("click", (e) => {
+  const rb = e.target.closest("[data-rs]"); if (rb) { e.stopPropagation(); rb.disabled = true; restoreHist(rb.dataset.rs); return; }
   const h = e.target.closest("[data-dh]"); if (!h) return;
   const k = h.dataset.dh; histOpen.has(k) ? histOpen.delete(k) : histOpen.add(k);
   try { localStorage.setItem("sdj-hopen", JSON.stringify([...histOpen].slice(-60))); } catch (e2) {}
