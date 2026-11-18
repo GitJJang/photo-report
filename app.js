@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.27";
+const APP_VERSION = "2.1.28";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -401,7 +401,7 @@ async function showPrevRec(i) {
     if (p && p[k]) { try { const bm = await createImageBitmap(p[k]); x.drawImage(bm, 0, 0, cv.width, cv.height); } catch (e) {} }
     else { x.fillStyle = "#8a94a6"; x.font = "28px sans-serif"; x.textAlign = "center"; x.fillText(r.fileUrl ? "아래 '파일 열기'로 확인" : "사진은 만든 사람 폰에만 있어요", cv.width / 2, cv.height / 2); }
   }
-  const nav = prevList.length > 1 ? `<div class="row" style="justify-content:center;gap:12px;margin:8px 0"><button class="btn" data-pv="${i - 1}" ${i ? "" : "disabled"}>◀</button><b>${i + 1} / ${prevList.length}</b><button class="btn" data-pv="${i + 1}" ${i < prevList.length - 1 ? "" : "disabled"}>▶</button></div>` : "";
+  const nav = prevList.length > 1 ? `<div style="display:flex;align-items:center;justify-content:center;gap:12px;margin:8px 0"><style>#prevMore [data-pv]{flex:1}</style><button class="btn" data-pv="${i - 1}" ${i ? "" : "disabled"}>◀</button><b>${i + 1} / ${prevList.length}</b><button class="btn" data-pv="${i + 1}" ${i < prevList.length - 1 ? "" : "disabled"}>▶</button></div>` : "";
   $("#prevAct").innerHTML = `<button class="btn" data-act="edit" data-i="${i}">✏️ 수정</button><button class="btn danger" data-act="del" data-i="${i}">🗑 삭제</button>`;
   $("#prevMore").innerHTML = nav + `<p class="note">${r.maker ? "작성자 " + esc(r.maker) : ""}</p>` + (r.fileUrl ? `<button class="btn" data-url="${esc(r.fileUrl)}" style="width:100%;margin-bottom:8px">📄 사무실에 올린 사진대지 파일 열기</button>` : "");
   $("#prevBack").hidden = false;
@@ -688,8 +688,17 @@ function periodStart(p) {
   if (p === "month") { d.setDate(1); return d.getTime(); }
   return 0; // all
 }
+/* 구글시트는 20261117을 숫자로, 날짜칸은 ISO 문자열로 돌려줄 수 있어서 문자열로 통일 */
+function normHist(r) {
+  const o = { ...r }; let d = o.date;
+  if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}T/.test(d)) { const t = new Date(d); d = t.getFullYear() + pad(t.getMonth() + 1) + pad(t.getDate()); }
+  o.date = d == null ? "" : String(d).replace(/\.0+$/, "");
+  ["id", "unit", "line", "station", "kind", "part", "cu", "status", "maker", "fileUrl"].forEach((k) => { if (o[k] != null && typeof o[k] !== "string") o[k] = String(o[k]); });
+  o.ts = +o.ts || 0; o.count = +o.count || 1;
+  return o;
+}
 function histDateMs(r) {
-  const s = r.date || "";
+  const s = String(r.date || "");
   if (/^\d{8}$/.test(s)) return new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)).getTime();
   return r.ts || 0;
 }
@@ -698,8 +707,9 @@ let histRows = [];
 let histRemoteCache = { t: 0, items: [] };
 async function histRemote() {
   if (Date.now() - histRemoteCache.t < 15000) return histRemoteCache.items;
-  const items = await syncGet("hist");
-  if (!items) return histRemoteCache.items; // 서버 응답이 없으면 이 폰 기록만 보여주고 다음에 다시 시도
+  const raw = await syncGet("hist");
+  if (!raw) return histRemoteCache.items;
+  const items = raw.map(normHist); // 서버 응답이 없으면 이 폰 기록만 보여주고 다음에 다시 시도
   histRemoteCache = { t: Date.now(), items };
   return items;
 }
@@ -817,7 +827,24 @@ const TABS = ["home", "plan", "stock", "stat", "photo"];
 const TITLES = { home: "승강업무 통합", plan: "일정", stock: "창고 재고", stat: "현황", photo: "사진대지" };
 const pgOf = (k) => $("#pg" + k[0].toUpperCase() + k.slice(1));
 let curTab = "home", statSeg = "acc";
-function showTab(t) {
+/* ---------- 폰 뒤로가기: 열린 창을 하나씩 닫고, 창이 없으면 홈으로 ---------- */
+const backStack = []; let ignorePop = 0, tabGuard = false;
+function backSilently() { ignorePop++; history.back(); }
+document.querySelectorAll(".sheet-back").forEach((el) => {
+  new MutationObserver(() => {
+    const i = backStack.lastIndexOf(el.id);
+    if (!el.hidden && i < 0) { backStack.push(el.id); history.pushState({ sheet: el.id }, ""); }
+    else if (el.hidden && i >= 0) { backStack.splice(i, 1); backSilently(); }
+  }).observe(el, { attributes: true, attributeFilter: ["hidden"] });
+});
+window.addEventListener("popstate", () => {
+  if (ignorePop > 0) { ignorePop--; return; }
+  const id = backStack.pop();
+  if (id) { const el = document.getElementById(id); if (el) el.hidden = true; return; }
+  if (tabGuard) { tabGuard = false; showTab("home", true); }
+});
+function showTab(t, fromBack) {
+  if (!fromBack) { if (t !== "home" && !tabGuard) { history.pushState({ tab: 1 }, ""); tabGuard = true; } else if (t === "home" && tabGuard && !backStack.length) { tabGuard = false; backSilently(); } }
   curTab = t;
   TABS.forEach((k) => { pgOf(k).hidden = k !== t; });
   [...$("#tabs").children].forEach((b) => b.classList.toggle("on", b.dataset.t === t));
@@ -938,7 +965,9 @@ const IC = {
   box: '<svg class="ic" viewBox="0 0 24 24"><path d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8"/></svg>',
 };
 const catIc = { "점검": IC.chk, "검사": IC.ins, "중보수": IC.rep, "수선": IC.rep };
-const planRow = (it) => `<div class="prow2 ${lineCls[it.line] || ""}"><span class="bar4"></span><div class="pm"><div class="pt"><span class="cat ${catCls[it.cat] || "c1"}">${catIc[it.cat] || ""}${esc(it.cat)}</span>${it.line ? `<span>${esc(it.line)} ${esc(it.kind || "")}</span>` : ""}</div><div class="px stn">${stnHtml(it.text)}</div></div></div>`;
+/* "동대구4 상좌" → "동대구4(상좌)", "해안2좌4우" → "해안2(좌)4(우)" — 표시만 바꾸고 원본은 그대로 */
+const fmtLR = (t) => String(t || "").replace(/(\d)\s*((?:상|하)?[좌우])(?![가-힣)])/g, "$1($2)");
+const planRow = (it) => `<div class="prow2 ${lineCls[it.line] || ""}"><span class="bar4"></span><div class="pm"><div class="pt"><span class="cat ${catCls[it.cat] || "c1"}">${catIc[it.cat] || ""}${esc(it.cat)}</span>${it.line ? `<span>${esc(it.line)} ${esc(it.kind || "")}</span>` : ""}</div><div class="px stn">${stnHtml(fmtLR(it.text))}</div></div></div>`;
 let homeCt = (() => { try { return localStorage.getItem("sdj-ct") || "1호선"; } catch (e) { return "1호선"; } })();
 async function renderHome() {
   const [d, pl] = await Promise.all([loadData("sample").catch(() => null), getPlan()]);
@@ -1132,7 +1161,7 @@ function planTableHtml(rows, a, b) {
       let cells = "";
       for (let d = 1; d <= last; d++) {
         const hit = rows.filter((x) => x.it.line === line && x.it.cat === cat && (x.it.kind || "") === kind && x.d.getDate() === d);
-        cells += `<td>${hit.map((x) => esc(x.it.text)).join("<br>")}</td>`;
+        cells += `<td>${hit.map((x) => esc(fmtLR(x.it.text))).join("<br>")}</td>`;
       }
       body += `<tr><th>${label}</th>${cells}</tr>`;
     }
@@ -1142,7 +1171,7 @@ function planTableHtml(rows, a, b) {
   }
   html = `<div class="xlscroll" data-w="${W}">${html}</div><div class="note" style="margin:2px 0 8px">두 손가락으로 벌리면 확대, 오므리면 한 달 전체가 보여요. 칸을 두 번 누르면 확대/전체 전환.</div>`;
   const jb = rows.filter((x) => x.it.cat === "중보수");
-  if (jb.length) html += `<div class="hsec">중보수</div><div class="mini">${jb.map((x) => `<div><span>${dLabel(x.d)}</span><b>${esc(x.it.text)}</b></div>`).join("")}</div>`;
+  if (jb.length) html += `<div class="hsec">중보수</div><div class="mini">${jb.map((x) => `<div><span>${dLabel(x.d)}</span><b>${esc(fmtLR(x.it.text))}</b></div>`).join("")}</div>`;
   return html;
 }
 /* 표 확대: 기본은 화면 폭에 한 달이 다 들어오게(맞춤), 두 손가락으로 최대 1.6배까지 */
