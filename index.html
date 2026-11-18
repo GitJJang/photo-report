@@ -211,6 +211,16 @@ mark{background:#ffe58a;color:inherit;border-radius:3px;padding:0 1px}
 .dayg.today .dayh{background:var(--accent-soft)}
 .dayh .sun{color:var(--l1)} .dayh .sat{color:var(--c-chk)}
 .cal{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px;margin:0 0 12px;box-shadow:var(--sh)}
+.xlscroll{overflow-x:auto;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
+.xlscroll .hsec{position:sticky;left:0;width:fit-content}
+.xltbl.xlfit{table-layout:fixed;min-width:0}.xltbl.xlfit td{min-width:0;max-width:none;overflow-wrap:anywhere}.xltbl.xlfit th,.xltbl.xlfit td{padding:3px 2px}
+.hday{background:var(--card);border:1px solid var(--line);border-radius:var(--r2);margin:0 0 8px;overflow:hidden}
+.hdh{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:52px;padding:0 14px;cursor:pointer;font:800 16px var(--font);color:var(--ink);-webkit-tap-highlight-color:transparent;user-select:none}
+.hdh:active{background:var(--navy-soft)}
+.hcnt{height:26px;padding:0 10px;border-radius:13px;font-size:13px;background:var(--navy-soft);color:var(--navy2)}
+.hdbody{padding:0 14px 10px}
+.hit{padding:7px 0;font-size:14px;color:var(--ink2);cursor:pointer;line-height:1.35}
+.hday.open .hdh{padding-bottom:2px}
 .xltbl{border-collapse:collapse;width:max-content;min-width:100%;font-size:12px;margin-bottom:10px}
 .xltbl th,.xltbl td{border:1px solid var(--line,#ddd);padding:4px 6px;text-align:center;white-space:nowrap;vertical-align:top}
 .xltbl thead th{background:var(--panel2,#f3f4f6);font-weight:700;position:sticky;top:0}
@@ -443,7 +453,7 @@ mark{background:#ffe58a;color:inherit;border-radius:3px;padding:0 1px}
     <div class="chips" id="planKind"></div>
     <div class="hseg" id="planViewSw" hidden><button data-v="cal" class="on">달력</button><button data-v="table">표(엑셀처럼)</button></div>
     <div id="planCal"></div>
-    <div id="planTable" style="overflow-x:auto"></div>
+    <div id="planTable"></div>
     <div id="planList"></div>
   </section>
 

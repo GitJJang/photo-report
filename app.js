@@ -1,6 +1,6 @@
 /* 사진대지 앱 — 업체·직원용. 서버 없이 폰 안에서만 돌아간다(사진은 어디에도 올라가지 않음). */
 "use strict";
-const APP_VERSION = "2.1.25";
+const APP_VERSION = "2.1.26";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -698,15 +698,28 @@ function drawHist(local, remote) {
     `<div class="bars"><h4>부품별</h4>${bars(by((r) => r.part))}</div>`;
   histRows = rows;
   const myMaker = (() => { try { return localStorage.getItem("sdj-maker") || ""; } catch (e) { return ""; } })();
-  list.innerHTML = rows.map((r, i) => {
-    const d = r.date && /^\d{8}$/.test(String(r.date)) ? `${String(r.date).slice(4, 6)}/${String(r.date).slice(6, 8)}` : "";
-    const place = [r.station, r.unit ? (r.kind || "") + r.unit : ""].filter(Boolean).join(" ");
-    const work = [r.part, (+r.count ? r.count + (r.cu || "개") : "")].filter(Boolean).join(" ");
-    const mine = r.maker && r.maker === myMaker;
-    const who = r.maker ? `<span class="tag${mine ? " ok" : ""}" style="margin-left:4px">${esc(r.maker)}</span>` : "";
-    return `<div class="hrow2" data-i="${i}" style="cursor:pointer"><div><b>${esc(place || "(역 미입력)")}</b><small>${esc(work)}${r.status ? " · " + esc(r.status) : ""}</small></div><span class="hwhen">${d}${who}</span></div>`;
+  // 날짜별 카드: rows는 이미 최근 날짜순 → 같은 날짜끼리 묶기만 한다(건수·통계 계산은 위에서 그대로)
+  const groups = [];
+  rows.forEach((r, i) => { const k = /^\d{8}$/.test(String(r.date || "")) ? String(r.date) : "none"; let g = groups[groups.length - 1]; if (!g || g.k !== k) groups.push((g = { k, items: [] })); g.items.push([r, i]); });
+  const WD = "일월화수목금토";
+  const dayLabel = (k) => k === "none" ? "날짜 없음" : (() => { const dt = new Date(+k.slice(0, 4), +k.slice(4, 6) - 1, +k.slice(6, 8)); return `${dt.getMonth() + 1}월 ${dt.getDate()}일 (${WD[dt.getDay()]})`; })();
+  list.innerHTML = groups.map((g) => {
+    const open = histOpen.has(g.k);
+    const items = open ? `<div class="hdbody">${g.items.map(([r, i]) => {
+      const place = [r.station, r.unit ? (r.kind || "") + r.unit : ""].filter(Boolean).join(" ");
+      const work = [r.part, (+r.count ? r.count + (r.cu || "개") : "")].filter(Boolean).join(" ");
+      return `<div class="hit" data-i="${i}">${esc([place || "(역 미입력)", work].filter(Boolean).join(" "))}</div>`;
+    }).join("")}</div>` : "";
+    return `<div class="hday${open ? " open" : ""}"><div class="hdh" data-dh="${g.k}" role="button" aria-expanded="${open}"><span>${dayLabel(g.k)}</span><span class="tag hcnt">${g.items.length}건</span></div>${items}</div>`;
   }).join("");
 }
+let histOpen = new Set(); try { histOpen = new Set(JSON.parse(localStorage.getItem("sdj-hopen") || "[]")); } catch (e) {}
+$("#histList").addEventListener("click", (e) => {
+  const h = e.target.closest("[data-dh]"); if (!h) return;
+  const k = h.dataset.dh; histOpen.has(k) ? histOpen.delete(k) : histOpen.add(k);
+  try { localStorage.setItem("sdj-hopen", JSON.stringify([...histOpen].slice(-60))); } catch (e2) {}
+  renderHist();
+});
 $("#histList").addEventListener("click", (e) => {
   const it = e.target.closest("[data-i]"); if (!it) return;
   if (!histRows[+it.dataset.i]) return;
@@ -753,6 +766,8 @@ const today0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
 function itemDate(it) { if (it.date) { const [y, m, d] = it.date.split("-").map(Number); return new Date(y, m - 1, d); } const d = today0(); d.setDate(d.getDate() + (it.off || 0)); return d; }
 const WD = "일월화수목금토";
 const dLabel = (d) => `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]})`;
+/* 지역번호 없는 일반전화(965-3204)는 앞에 053을 붙여서 걸린다 */
+const genHref = (t) => { const d = String(t || "").replace(/[^\d]/g, ""); return "tel:" + (d.startsWith("0") || d.length > 8 ? d : "053" + d); };
 const telHref = (t) => "tel:" + String(t || "").replace(/[^\d+]/g, "");
 const chipsHtml = (list, cur) => list.map(([v, l]) => `<button data-f="${v}"${v === cur ? ' class="on"' : ""}>${l}</button>`).join("");
 const stnHtml = (t) => esc(t).replace(/([가-힣A-Za-z0-9]+?)(\([^)]*\))/g, "<b>$1</b><i>$2</i>");
@@ -878,7 +893,7 @@ async function renderHome() {
   if (homeCt === "staff" && ct.data.staff) {
     const S = ct.data.staff, groups = [];
     (S.people || []).forEach((p) => { let g = groups.find((x) => x.n === (p.grp || "관리소")); if (!g) groups.push((g = { n: p.grp || "관리소", a: [] })); g.a.push(p); });
-    const nums = (S.gen || S.in) ? `<div class="cnum">${S.gen ? `<a href="${esc(telHref(S.gen))}"><small>일반전화 · 누르면 연결</small>${esc(S.gen)}</a>` : ""}${S.in ? `<span><small>사내전화</small>${esc(S.in)}</span>` : ""}</div>` : "";
+    const nums = (S.gen || S.in) ? `<div class="cnum">${S.gen ? `<a href="${esc(genHref(S.gen))}"><small>일반전화 · 누르면 연결</small>${esc(S.gen)}</a>` : ""}${S.in ? `<span><small>사내전화</small>${esc(S.in)}</span>` : ""}</div>` : "";
     body = nums + '<div class="staffB">' + groups.map((g) => `<div class="sub">${esc(g.n)} ${g.a.length}명</div>${grid(g.a, "l0x")}`).join("") + "</div>";
   } else if (homeCt === "staff") {
     const st = (d.work && d.work.staff) || {};
@@ -887,7 +902,7 @@ async function renderHome() {
     const k = homeCt, v = ct.data[k] || {}, ppl = v.people || [], c = cls[k];
     const isD = (p) => dset.has(k + "|" + p.name), isO = (p) => oset.has(k + "|" + p.name) && !isD(p);
     const dayP = ppl.filter((p) => !isD(p) && !isO(p)), dutyP = ppl.filter(isD), offP = ppl.filter(isO);
-    const nums = (v.gen || v.in) ? `<div class="cnum">${v.gen ? `<a href="${esc(telHref(v.gen))}"><small>일반전화 · 누르면 연결</small>${esc(v.gen)}</a>` : ""}${v.in ? `<span><small>사내전화</small>${esc(v.in)}</span>` : ""}</div>` : "";
+    const nums = (v.gen || v.in) ? `<div class="cnum">${v.gen ? `<a href="${esc(genHref(v.gen))}"><small>일반전화 · 누르면 연결</small>${esc(v.gen)}</a>` : ""}${v.in ? `<span><small>사내전화</small>${esc(v.in)}</span>` : ""}</div>` : "";
     if (dutyMode === k) {
       body = nums + `<div class="sub duty">오늘 당직으로 지정할 사람을 누르세요</div><div class="pgrid">${ppl.map((p) => `<button class="pc dpick${isD(p) ? " on" : ""}" data-k="${k}|${esc(p.name)}"><span>${esc(p.name)}${p.role ? `<small class="rk">${esc(p.role)}</small>` : ""}</span><em>${isD(p) ? "당직 ✓" : "당직"}</em></button>`).join("")}</div>`;
     } else {
@@ -1026,6 +1041,7 @@ function planTableHtml(rows, a, b) {
   if (!lines.length) return '<div class="note">표로 볼 노선 데이터가 없어요</div>';
   const KROWS = [["EL", "점검"], ["ES", "점검"], ["", "검사"]];
   let html = "";
+  const COLW = 72, W = 36 + last * COLW;
   for (const line of lines) {
     let body = "";
     for (const [kind, cat] of KROWS) {
@@ -1039,12 +1055,40 @@ function planTableHtml(rows, a, b) {
     }
     let head = `<th></th>`;
     for (let d = 1; d <= last; d++) { const wd = new Date(a.getFullYear(), a.getMonth(), d).getDay(); head += `<th class="${wd === 0 ? "sun" : wd === 6 ? "sat" : ""}">${d}</th>`; }
-    html += `<div class="hsec">${esc(line)}</div><table class="xltbl"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    html += `<div class="hsec">${esc(line)}</div><div class="xlz"><table class="xltbl xlfit" style="width:${W}px"><colgroup><col style="width:36px">${`<col style="width:${COLW}px">`.repeat(last)}</colgroup><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
+  html = `<div class="xlscroll" data-w="${W}">${html}</div><div class="note" style="margin:2px 0 8px">두 손가락으로 벌리면 확대, 오므리면 한 달 전체가 보여요. 칸을 두 번 누르면 확대/전체 전환.</div>`;
   const jb = rows.filter((x) => x.it.cat === "중보수");
   if (jb.length) html += `<div class="hsec">중보수</div><div class="mini">${jb.map((x) => `<div><span>${dLabel(x.d)}</span><b>${esc(x.it.text)}</b></div>`).join("")}</div>`;
   return html;
 }
+/* 표 확대: 기본은 화면 폭에 한 달이 다 들어오게(맞춤), 두 손가락으로 최대 1.6배까지 */
+function planFit() { const sc = $("#planTable .xlscroll"); return sc ? Math.min(1, (sc.clientWidth - 1) / +sc.dataset.w) : 1; }
+function applyPlanZoom(anchorX) {
+  const sc = $("#planTable .xlscroll"); if (!sc) return;
+  const fit = planFit(), old = sc._z || fit;
+  let z = planState.zoom == null ? fit : planState.zoom; z = Math.max(fit, Math.min(1.6, z)); planState.zoom = z;
+  const cx = anchorX == null ? 0 : (sc.scrollLeft + anchorX) / old;
+  sc.querySelectorAll(".xlz").forEach((el) => (el.style.zoom = z)); sc._z = z;
+  if (anchorX != null) sc.scrollLeft = cx * z - anchorX; else if (z <= fit + 0.001) sc.scrollLeft = 0;
+}
+(() => {
+  const box = $("#planTable"); let pz = null, lastTap = 0;
+  const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  box.addEventListener("touchstart", (e) => {
+    const sc = e.target.closest(".xlscroll"); if (!sc) return;
+    if (e.touches.length === 2) { pz = { d0: dist(e.touches), z0: sc._z || planFit() }; e.preventDefault(); }
+    else if (e.touches.length === 1) { const n = Date.now(); if (n - lastTap < 300) { const fit = planFit(); planState.zoom = (sc._z || fit) > fit + 0.05 ? fit : Math.min(1, fit * 3.2); applyPlanZoom(e.touches[0].clientX - sc.getBoundingClientRect().left); } lastTap = n; }
+  }, { passive: false });
+  box.addEventListener("touchmove", (e) => {
+    if (!pz || e.touches.length !== 2) return; e.preventDefault();
+    const sc = e.target.closest(".xlscroll") || $("#planTable .xlscroll"); if (!sc) return;
+    planState.zoom = pz.z0 * dist(e.touches) / pz.d0;
+    applyPlanZoom((e.touches[0].clientX + e.touches[1].clientX) / 2 - sc.getBoundingClientRect().left);
+  }, { passive: false });
+  box.addEventListener("touchend", (e) => { if (e.touches.length < 2) pz = null; });
+  window.addEventListener("resize", () => { if (!box.hidden) applyPlanZoom(); });
+})();
 function planRange(p) {
   const t = today0();
   if (p === "today") return [t, t];
@@ -1072,6 +1116,7 @@ async function renderPlan() {
   const tableOn = planState.p === "month" && planState.view === "table";
   $("#planTable").innerHTML = tableOn ? planTableHtml(rows, a, b) : "";
   $("#planTable").hidden = !tableOn;
+  if (tableOn) applyPlanZoom();
   // 이번달: 한눈에 보는 달력
   if (planState.p === "month" && !tableOn) {
     const y = a.getFullYear(), m = a.getMonth(), first = new Date(y, m, 1).getDay(), last = new Date(y, m + 1, 0).getDate();
